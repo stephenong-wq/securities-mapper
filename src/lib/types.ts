@@ -1,7 +1,7 @@
 // ─── Models ───────────────────────────────────────────────────────────────────
 export const MODELS = [
-  { id: "stp",                         label: "STP",                                   description: "STP core model" },
-  { id: "stp-tax-aware",               label: "STP - Tax Aware",                       description: "STP tax-aware model" },
+  { id: "stp",           label: "Savvy Total Portfolio",            description: "Savvy Total Portfolio core model" },
+  { id: "stp-tax-aware", label: "Savvy Total Portfolio - Tax Aware", description: "Savvy Total Portfolio tax-aware model" },
   { id: "savvy-strategic",             label: "Savvy Strategic Model",                 description: "Savvy Strategic core model" },
   { id: "savvy-strategic-tax-aware",   label: "Savvy Strategic Model - Tax Aware",     description: "Savvy Strategic tax-aware model" },
   { id: "blackrock-target-allocation", label: "BlackRock Target Allocation ETF Model", description: "BlackRock target allocation ETF model" },
