@@ -320,7 +320,7 @@ export default function Home() {
                       border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer",
                     }}
                   >
-                    ↓ Export AccountEquivalent
+                    ↓ Export
                   </button>
                 </div>
               )}
