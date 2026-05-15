@@ -187,7 +187,7 @@ export default function Home() {
                 <textarea
                   value={tickerInput}
                   onChange={e => setTickerInput(e.target.value)}
-                  placeholder={"Paste tickers here...\nVTI\nIXUS\nAGG\nQQQ, SPY, BND"}
+                  placeholder={"Paste tickers here...\nVTI\nIBIT\nAGG\nQQQ, SPY, IVV"}
                   rows={10}
                   style={{
                     width: "100%", border: "1px solid var(--border)", borderRadius: 8,
