@@ -152,20 +152,15 @@ export default function Home() {
                 }}
               >
                 Cancel
-              </button>
-              <button
-                onClick={handleExportConfirm}
-                disabled={!exportAccountId.trim()}
-                style={{
-                  flex: 2, padding: "10px 0",
-                  background: exportAccountId.trim() ? "var(--accent)" : "var(--surface-sunken)",
-                  color: exportAccountId.trim() ? "white" : "var(--ink-faint)",
-                  border: "none", borderRadius: 8,
-                  fontSize: 13, fontWeight: 600, cursor: exportAccountId.trim() ? "pointer" : "not-allowed",
-                }}
-              >
-                ↓ Download CSV
-              </button>
+            <button
+                    onClick={handleExportClick}
+                    style={{
+                      padding: "6px 16px", background: "var(--accent-light)", color: "var(--accent)",
+                      border: "1px solid #c0d4ea", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                    }}
+                  >
+                    Export
+                  </button>
             </div>
           </div>
         </div>
