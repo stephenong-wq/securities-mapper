@@ -53,7 +53,7 @@ function exportCSV(results: MappedSecurity[], modelLabel: string) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function Home() {
-  const [selectedModel, setSelectedModel] = useState<ModelId>("core-allocation")
+  const [selectedModel, setSelectedModel] = useState<ModelId>("stp")
   const [tickerInput, setTickerInput] = useState("")
   const [results, setResults] = useState<MappedSecurity[] | null>(null)
   const [loading, setLoading] = useState(false)
