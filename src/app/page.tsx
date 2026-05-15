@@ -109,7 +109,7 @@ export default function Home() {
         }}>
           <div style={{
             background: "var(--surface-raised)", borderRadius: 12, padding: 32,
-            width: 400, boxShadow: "0 8px 40px rgba(0,0,0,0.2)", border: "1px solid var(--border)",
+            width: 480, boxShadow: "0 8px 40px rgba(0,0,0,0.2)", border: "1px solid var(--border)",
           }}>
             <div style={{ fontFamily: "var(--font-display)", fontSize: 18, marginBottom: 8 }}>Export AccountEquivalent</div>
             <div style={{ fontSize: 13, color: "var(--ink-faint)", marginBottom: 20 }}>
