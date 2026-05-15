@@ -307,8 +307,8 @@ export default function Home() {
                   <button
                     onClick={handleExportClick}
                     style={{
-                      padding: "6px 16px", background: "var(--accent-light)", color: "var(--accent)",
-                      border: "1px solid #c0d4ea", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                  background: "#d0e4f5", color: "var(--accent)",
+                  border: "1px solid #a8c8e8", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer",
                     }}
                   >
                     Export
