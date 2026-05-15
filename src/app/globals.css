@@ -3,31 +3,29 @@
 @tailwind utilities;
 
 :root {
-  --ink: #e8edf5;
-  --ink-muted: #9aabc2;
-  --ink-faint: #5a6f8a;
-  --surface: #0d1520;
-  --surface-raised: #111d2e;
-  --surface-sunken: #0a1018;
-  --border: #1e2e42;
-  --border-strong: #2a4060;
-  --accent: #4a90d9;
-  --accent-light: #162840;
+  --ink: #d0e4f8;
+  --ink-muted: #7a9cc0;
+  --ink-faint: #3a5a7a;
+  --surface: #080f18;
+  --surface-raised: #0c1624;
+  --surface-sunken: #060c14;
+  --border: #112238;
+  --border-strong: #1a3a5c;
+  --accent: #00c8ff;
+  --accent-light: #001a2e;
   --accent-text: #ffffff;
-  --green: #3db87a;
-  --green-light: #0d2a1e;
-  --amber: #e0a030;
-  --amber-light: #2a1e08;
-  --red: #e05555;
-  --red-light: #2a1010;
-  --split-color: #9b7fe8;
-  --split-light: #1e1435;
-  --chip-mapped-bg: #0d2a1e;
-  --chip-mapped-color: #3db87a;
-  --chip-split-bg: #1e1435;
-  --chip-split-color: #9b7fe8;
-  --chip-warn-bg: #2a1010;
-  --chip-warn-color: #e05555;
+  --green: #00f0c0;
+  --green-light: #001e18;
+  --amber: #00d4ff;
+  --amber-light: #001828;
+  --red: #ff4488;
+  --red-light: #1e0018;
+  --split-color: #4488ff;
+  --split-light: #001030;
+  --neon-blue: #00c8ff;
+  --neon-cyan: #00f0c0;
+  --neon-purple: #4488ff;
+  --neon-pink: #ff4488;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -39,6 +37,9 @@ body {
   font-size: 15px;
   line-height: 1.6;
   min-height: 100vh;
+  background-image:
+    radial-gradient(ellipse at 20% 20%, rgba(0,120,200,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 80%, rgba(0,200,255,0.04) 0%, transparent 60%);
 }
 
 ::-webkit-scrollbar { width: 6px; }
@@ -52,6 +53,10 @@ body {
 @keyframes shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position: 200% 0; }
+}
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(0,200,255,0.15); }
+  50%       { box-shadow: 0 0 16px rgba(0,200,255,0.3); }
 }
 
 .fade-up   { animation: fadeUp 0.4s ease both; }
