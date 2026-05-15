@@ -1,10 +1,11 @@
 // ─── Models ───────────────────────────────────────────────────────────────────
 export const MODELS = [
-  { id: "core-allocation",     label: "Core Allocation",      description: "Broad market exposure using low-cost index funds" },
-  { id: "factor-tilt",         label: "Factor Tilt",          description: "Value, momentum, quality, and size factor exposure" },
-  { id: "esg-responsible",     label: "ESG / Responsible",    description: "Screens for environmental, social, and governance criteria" },
-  { id: "active-blend",        label: "Active Blend",         description: "Mix of active and passive strategies by asset class" },
-  { id: "institutional-plus",  label: "Institutional Plus",   description: "Institutional share classes and alternatives access" },
+  { id: "stp",                         label: "STP",                                   description: "STP core model" },
+  { id: "stp-tax-aware",               label: "STP - Tax Aware",                       description: "STP tax-aware model" },
+  { id: "savvy-strategic",             label: "Savvy Strategic Model",                 description: "Savvy Strategic core model" },
+  { id: "savvy-strategic-tax-aware",   label: "Savvy Strategic Model - Tax Aware",     description: "Savvy Strategic tax-aware model" },
+  { id: "blackrock-target-allocation", label: "BlackRock Target Allocation ETF Model", description: "BlackRock target allocation ETF model" },
+  { id: "vanguard-crsp",               label: "Vanguard CRSP Series",                  description: "Vanguard CRSP index series" },
 ] as const
 
 export type ModelId = typeof MODELS[number]["id"]
@@ -26,17 +27,17 @@ export interface MorningstarRow {
   ticker: string
   name: string
   msStyle: MsStyle
-  assetClass: string       // e.g. "US Equity", "Intl Equity", "Fixed Income"
-  region: string           // e.g. "US", "Developed ex-US", "Emerging", "Global"
-  factors: string[]        // e.g. ["Value", "Low Vol"]
-  splitRegions?: { region: string; weight: number }[]  // for blended funds like IXUS
+  assetClass: string
+  region: string
+  factors: string[]
+  splitRegions?: { region: string; weight: number }[]
 }
 
 export interface ModelUniverseRow {
   modelId: ModelId
   ticker: string
   name: string
-  role: string             // e.g. "US Large Cap Core", "Emerging Markets"
+  role: string
 }
 
 // ─── Mapping Output ────────────────────────────────────────────────────────────
@@ -48,7 +49,7 @@ export interface MappedSecurity {
     msStyle: MsStyle
     assetClass: string
     region: string
-    weight?: number        // set when input splits into multiple (e.g. 0.7 / 0.3)
+    weight?: number
     note?: string
   }[]
   status: "mapped" | "split" | "no-match" | "not-in-model"
