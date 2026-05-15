@@ -19,20 +19,12 @@ function styleColor(style: string) {
   return { bg: "#efefef", color: "#444" }
 }
 
-// ─── AccountEquivalent export format ──────────────────────────────────────────
 function exportCSV(results: MappedSecurity[], accountId: string) {
   const rows = [["Account ID", "Targeted", "Equivalent", "Equivalent Buy Priority", "Equivalent Sell Priority", "Delete"]]
   results.forEach(r => {
-    if (r.mappings.length === 0) return // omit unmapped rows — Delete left blank
+    if (r.mappings.length === 0) return
     r.mappings.forEach(m => {
-      rows.push([
-        accountId,      // Account ID
-        m.ticker,       // Targeted — the model holding (mapped TO)
-        r.inputTicker,  // Equivalent — the client's security
-        "Do Not Buy",   // Equivalent Buy Priority
-        "Default",      // Equivalent Sell Priority
-        "",             // Delete — blank
-      ])
+      rows.push([accountId, m.ticker, r.inputTicker, "Do Not Buy", "Default", ""])
     })
   })
   const csv = rows.map(r => r.map(c => `"${c}"`).join(",")).join("\n")
@@ -47,7 +39,6 @@ function exportCSV(results: MappedSecurity[], accountId: string) {
 export default function Home() {
   const [selectedModel, setSelectedModel] = useState<ModelId>("stp")
   const [tickerInput, setTickerInput] = useState("")
-  const [accountId, setAccountId] = useState("")
   const [results, setResults] = useState<MappedSecurity[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [dataLoading, setDataLoading] = useState(true)
@@ -110,7 +101,7 @@ export default function Home() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
 
-      {/* ── Account ID Export Modal ── */}
+      {/* Export Modal */}
       {showExportModal && (
         <div style={{
           position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000,
@@ -152,21 +143,26 @@ export default function Home() {
                 }}
               >
                 Cancel
-            <button
-                    onClick={handleExportClick}
-                    style={{
-                      padding: "6px 16px", background: "var(--accent-light)", color: "var(--accent)",
-                      border: "1px solid #c0d4ea", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer",
-                    }}
-                  >
-                    Export
-                  </button>
+              </button>
+              <button
+                onClick={handleExportConfirm}
+                disabled={!exportAccountId.trim()}
+                style={{
+                  flex: 2, padding: "10px 0",
+                  background: exportAccountId.trim() ? "var(--accent)" : "var(--surface-sunken)",
+                  color: exportAccountId.trim() ? "white" : "var(--ink-faint)",
+                  border: "none", borderRadius: 8,
+                  fontSize: 13, fontWeight: 600, cursor: exportAccountId.trim() ? "pointer" : "not-allowed",
+                }}
+              >
+                Download CSV
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Header ── */}
+      {/* Header */}
       <header style={{
         borderBottom: "1px solid var(--border)", background: "var(--surface-raised)",
         padding: "0 40px", display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -180,7 +176,7 @@ export default function Home() {
             v1.0
           </span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div>
           {dataLoading ? (
             <span style={{ fontSize: 12, color: "var(--ink-faint)" }}>Loading data…</span>
           ) : (
@@ -205,7 +201,7 @@ export default function Home() {
 
         <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 32, alignItems: "start" }}>
 
-          {/* ── Left panel ── */}
+          {/* Left panel */}
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
             {/* Model selector */}
@@ -278,17 +274,17 @@ export default function Home() {
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: cfg.dot, flexShrink: 0 }} />
                   <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>
                     <strong style={{ color: "var(--ink)" }}>{cfg.label}</strong>
-                    {key === "mapped"         && " — exact or equivalent found in model"}
-                    {key === "split"          && " — maps to multiple tickers by region"}
-                    {key === "not-in-model"   && " — known security, not in this model"}
-                    {key === "no-match"       && " — ticker not found in Morningstar data"}
+                    {key === "mapped"        && " — exact or equivalent found in model"}
+                    {key === "split"         && " — maps to multiple tickers by region"}
+                    {key === "not-in-model"  && " — known security, not in this model"}
+                    {key === "no-match"      && " — ticker not found in Morningstar data"}
                   </span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* ── Right panel — Results ── */}
+          {/* Right panel */}
           <div className="fade-up-2">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, minHeight: 36 }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
@@ -311,17 +307,16 @@ export default function Home() {
                   <button
                     onClick={handleExportClick}
                     style={{
-                      padding: "6px 14px", background: "var(--accent)", color: "white",
-                      border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                      padding: "6px 16px", background: "var(--accent-light)", color: "var(--accent)",
+                      border: "1px solid #c0d4ea", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer",
                     }}
                   >
-                    ↓ Export
+                    Export
                   </button>
                 </div>
               )}
             </div>
 
-            {/* Empty state */}
             {!results && !loading && (
               <div style={{ border: "1px dashed var(--border)", borderRadius: 12, padding: "80px 40px", textAlign: "center", color: "var(--ink-faint)" }}>
                 <div style={{ fontFamily: "var(--font-display)", fontSize: 32, marginBottom: 12, opacity: 0.3 }}>⟳</div>
@@ -329,14 +324,12 @@ export default function Home() {
               </div>
             )}
 
-            {/* Loading skeleton */}
             {loading && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {[1,2,3,4,5].map(i => <div key={i} className="skeleton" style={{ height: 72, borderRadius: 10 }} />)}
               </div>
             )}
 
-            {/* Results table */}
             {results && !loading && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{
@@ -345,11 +338,7 @@ export default function Home() {
                   fontSize: 11, fontWeight: 700, letterSpacing: "0.08em",
                   textTransform: "uppercase", color: "var(--ink-faint)",
                 }}>
-                  <span>Input</span>
-                  <span>Mapped To</span>
-                  <span>MS Category</span>
-                  <span>Asset Class / Region</span>
-                  <span>Status</span>
+                  <span>Input</span><span>Mapped To</span><span>MS Category</span><span>Asset Class / Region</span><span>Status</span>
                 </div>
 
                 {results.map((r, idx) => {
@@ -357,16 +346,13 @@ export default function Home() {
                   return (
                     <div key={r.inputTicker + idx} className="fade-up"
                       style={{ animationDelay: `${idx * 0.04}s`, background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
-
                       {r.mappings.length === 0 && (
                         <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 1fr 1fr 90px", padding: "14px 16px", gap: 12, alignItems: "center" }}>
                           <span style={{ fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 600 }}>{r.inputTicker}</span>
                           <span style={{ fontSize: 13, color: "var(--ink-faint)", fontStyle: "italic" }}>—</span>
-                          <span /><span />
-                          <StatusBadge cfg={cfg} />
+                          <span /><span /><StatusBadge cfg={cfg} />
                         </div>
                       )}
-
                       {r.mappings.map((m, mi) => {
                         const sc = styleColor(m.msStyle)
                         return (
@@ -377,9 +363,7 @@ export default function Home() {
                             borderTop: mi > 0 ? "1px dashed var(--border)" : "none",
                             background: mi > 0 ? "var(--surface)" : "transparent",
                           }}>
-                            <span style={{ fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 600, visibility: mi === 0 ? "visible" : "hidden" }}>
-                              {r.inputTicker}
-                            </span>
+                            <span style={{ fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 600, visibility: mi === 0 ? "visible" : "hidden" }}>{r.inputTicker}</span>
                             <div>
                               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                 <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: "var(--accent)" }}>{m.ticker}</span>
@@ -403,9 +387,7 @@ export default function Home() {
                               <div>{m.assetClass}</div>
                               <div style={{ fontSize: 11, color: "var(--ink-faint)" }}>{m.region}</div>
                             </div>
-                            <div style={{ visibility: mi === 0 ? "visible" : "hidden" }}>
-                              <StatusBadge cfg={cfg} />
-                            </div>
+                            <div style={{ visibility: mi === 0 ? "visible" : "hidden" }}><StatusBadge cfg={cfg} /></div>
                           </div>
                         )
                       })}
