@@ -1,7 +1,6 @@
 import type { MorningstarRow, ModelUniverseRow, ModelId, MappedSecurity, MsStyle } from "./types"
 
 // ─── Index/benchmark fingerprinting ───────────────────────────────────────────
-// Extract key index signals from a fund name, ignoring issuer branding
 function indexFingerprint(name: string): string[] {
   const n = name.toLowerCase()
     .replace(/ishares|vanguard|schwab|spdr|invesco|fidelity|dimensional|avantis|jpmorgan|wisdomtree|first trust|blackrock|pimco|state street|columbia|pacer|global x|franklin|nuveen|abrdn|goldman sachs/gi, "")
@@ -10,7 +9,6 @@ function indexFingerprint(name: string): string[] {
 
   const signals: string[] = []
 
-  // Broad market
   if (/s&p\s*500|sp500/.test(n))           signals.push("sp500")
   if (/s&p\s*100/.test(n))                  signals.push("sp100")
   if (/total\s*(stock|market|us)/.test(n))  signals.push("total-us")
@@ -21,8 +19,6 @@ function indexFingerprint(name: string): string[] {
   if (/crsp\s*us\s*large/.test(n))          signals.push("crsp-large")
   if (/crsp\s*us\s*small/.test(n))          signals.push("crsp-small")
   if (/crsp\s*us\s*total/.test(n))          signals.push("crsp-total")
-
-  // Style
   if (/value/.test(n))                      signals.push("value")
   if (/growth/.test(n))                     signals.push("growth")
   if (/blend/.test(n))                      signals.push("blend")
@@ -34,8 +30,6 @@ function indexFingerprint(name: string): string[] {
   if (/mid[\s-]cap/.test(n))               signals.push("mid-cap")
   if (/large[\s-]cap/.test(n))             signals.push("large-cap")
   if (/multi[\s-]factor|factor/.test(n))   signals.push("factor")
-
-  // International
   if (/eafe/.test(n))                       signals.push("eafe")
   if (/msci\s*world/.test(n))              signals.push("msci-world")
   if (/ftse\s*dev/.test(n))               signals.push("ftse-developed")
@@ -43,8 +37,6 @@ function indexFingerprint(name: string): string[] {
   if (/ex[\s-]china/.test(n))              signals.push("ex-china")
   if (/acwi/.test(n))                      signals.push("acwi")
   if (/international|intl|global/.test(n)) signals.push("international")
-
-  // Fixed income
   if (/aggregate|agg/.test(n))             signals.push("aggregate")
   if (/treasury|govt|government/.test(n))  signals.push("treasury")
   if (/tips|inflation[\s-]protect/.test(n))signals.push("tips")
@@ -59,8 +51,6 @@ function indexFingerprint(name: string): string[] {
   if (/convertible/.test(n))               signals.push("convertible")
   if (/em(erging)?\s*(market)?\s*bond/.test(n))  signals.push("em-bond")
   if (/california|ca\s*muni/.test(n))      signals.push("california-muni")
-
-  // Sector
   if (/technology|tech/.test(n))           signals.push("sector-tech")
   if (/health\s*care|healthcare/.test(n))  signals.push("sector-healthcare")
   if (/energy/.test(n))                    signals.push("sector-energy")
@@ -68,8 +58,6 @@ function indexFingerprint(name: string): string[] {
   if (/real\s*estate|reit/.test(n))        signals.push("sector-realestate")
   if (/infrastructure/.test(n))            signals.push("sector-infra")
   if (/aerospace|defense/.test(n))         signals.push("sector-defense")
-
-  // Commodities
   if (/gold/.test(n))                      signals.push("commodity-gold")
   if (/commodity|commodit/.test(n))        signals.push("commodity-broad")
 
@@ -81,7 +69,6 @@ function fingerprintOverlap(a: string[], b: string[]): number {
   return b.filter(x => setA.has(x)).length
 }
 
-// ─── Mapping engine ────────────────────────────────────────────────────────────
 export function mapSecurities(
   inputTickers: string[],
   modelId: ModelId,
@@ -93,50 +80,47 @@ export function mapSecurities(
   const universeForModel = modelUniverse.filter(r => r.modelId === modelId)
   const universeTickers = new Set(universeForModel.map(r => r.ticker.toUpperCase()))
 
-  return inputTickers.map(raw => {
-    const ticker = raw.toUpperCase().trim()
-    const inputMs = msMap.get(ticker)
+  return inputTickers
+    .map(raw => {
+      const ticker = raw.toUpperCase().trim()
+      const inputMs = msMap.get(ticker)
 
-    // Already in model — exclude from results
-    if (universeTickers.has(ticker)) {
-      return { inputTicker: ticker, status: "excluded", mappings: [] } satisfies MappedSecurity
-    }
+      // Already in model — skip entirely
+      if (universeTickers.has(ticker)) return null
 
-    if (!inputMs) return { inputTicker: ticker, status: "no-match", mappings: [] } satisfies MappedSecurity
+      if (!inputMs) return { inputTicker: ticker, status: "no-match", mappings: [] } satisfies MappedSecurity
 
-    // Split-region fund (e.g. IXUS, VXUS)
-    if (inputMs.splitRegions && inputMs.splitRegions.length > 0) {
-      const splitMappings = inputMs.splitRegions.flatMap(split => {
-        const candidates = findCandidates(msMap, universeForModel, inputMs.assetClass, split.region)
-        return candidates.slice(0, 1).map(c => ({
-          ticker: c.ticker, name: c.name, msStyle: c.msStyle,
-          assetClass: c.assetClass, region: c.region,
-          weight: split.weight,
-          note: `${Math.round(split.weight * 100)}% ${split.region} exposure`,
-        }))
+      if (inputMs.splitRegions && inputMs.splitRegions.length > 0) {
+        const splitMappings = inputMs.splitRegions.flatMap(split => {
+          const candidates = findCandidates(msMap, universeForModel, inputMs.assetClass, split.region)
+          return candidates.slice(0, 1).map(c => ({
+            ticker: c.ticker, name: c.name, msStyle: c.msStyle,
+            assetClass: c.assetClass, region: c.region,
+            weight: split.weight,
+            note: `${Math.round(split.weight * 100)}% ${split.region} exposure`,
+          }))
+        })
+        if (splitMappings.length > 0) return { inputTicker: ticker, status: "split", mappings: splitMappings } satisfies MappedSecurity
+      }
+
+      const candidates = findCandidates(msMap, universeForModel, inputMs.assetClass, inputMs.region)
+      if (candidates.length === 0) return { inputTicker: ticker, status: "not-in-model", mappings: [] } satisfies MappedSecurity
+
+      const inputFingerprint = indexFingerprint(inputMs.name)
+      const ranked = candidates.sort((a, b) => {
+        const aFp = fingerprintOverlap(inputFingerprint, indexFingerprint(a.name))
+        const bFp = fingerprintOverlap(inputFingerprint, indexFingerprint(b.name))
+        if (bFp !== aFp) return bFp - aFp
+        return styleMatchScore(inputMs.msStyle, b.msStyle) - styleMatchScore(inputMs.msStyle, a.msStyle)
       })
-      if (splitMappings.length > 0) return { inputTicker: ticker, status: "split", mappings: splitMappings } satisfies MappedSecurity
-    }
 
-    // Find candidates by asset class + region
-    const candidates = findCandidates(msMap, universeForModel, inputMs.assetClass, inputMs.region)
-    if (candidates.length === 0) return { inputTicker: ticker, status: "not-in-model", mappings: [] } satisfies MappedSecurity
-
-    // Rank by: index fingerprint overlap > MS style match
-    const inputFingerprint = indexFingerprint(inputMs.name)
-    const ranked = candidates.sort((a, b) => {
-      const aFp = fingerprintOverlap(inputFingerprint, indexFingerprint(a.name))
-      const bFp = fingerprintOverlap(inputFingerprint, indexFingerprint(b.name))
-      if (bFp !== aFp) return bFp - aFp
-      return styleMatchScore(inputMs.msStyle, b.msStyle) - styleMatchScore(inputMs.msStyle, a.msStyle)
+      const best = ranked[0]
+      return {
+        inputTicker: ticker, status: "mapped",
+        mappings: [{ ticker: best.ticker, name: best.name, msStyle: best.msStyle, assetClass: best.assetClass, region: best.region }],
+      } satisfies MappedSecurity
     })
-
-    const best = ranked[0]
-    return {
-      inputTicker: ticker, status: "mapped",
-      mappings: [{ ticker: best.ticker, name: best.name, msStyle: best.msStyle, assetClass: best.assetClass, region: best.region }],
-    } satisfies MappedSecurity
-  })
+    .filter((r): r is MappedSecurity => r !== null)
 }
 
 function findCandidates(
