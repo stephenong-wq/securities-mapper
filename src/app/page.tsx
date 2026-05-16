@@ -81,14 +81,13 @@ export default function Home() {
   }, [tickerInput, selectedModel, msData, universeData])
 
   const handleExportClick = () => { setExportAccountId(""); setShowExportModal(true) }
-  const handleExportConfirm = () => { if (!visibleResults) return; exportCSV(visibleResults, exportAccountId); setShowExportModal(false) }
+  const handleExportConfirm = () => { if (!results) return; exportCSV(results, exportAccountId); setShowExportModal(false) }
 
   const selectedModelInfo = MODELS.find(m => m.id === selectedModel)!
-  const visibleResults = results ? results.filter(r => r.status !== "excluded") : null
-  const statusCounts = visibleResults ? {
-    mapped: visibleResults.filter(r => r.status === "mapped").length,
-    split:  visibleResults.filter(r => r.status === "split").length,
-    warn:   visibleResults.filter(r => r.status === "not-in-model" || r.status === "no-match").length,
+  const statusCounts = results ? {
+    mapped: results.filter(r => r.status === "mapped").length,
+    split:  results.filter(r => r.status === "split").length,
+    warn:   results.filter(r => r.status === "not-in-model" || r.status === "no-match").length,
   } : null
 
   return (
@@ -107,22 +106,13 @@ export default function Home() {
               onChange={e => setExportAccountId(e.target.value)}
               onKeyDown={e => e.key === "Enter" && handleExportConfirm()}
               placeholder="e.g. 12345678"
-              style={{
-                display: "block", width: "100%", marginTop: 8, marginBottom: 28,
-                padding: "12px 16px", border: "1px solid var(--border-strong)", borderRadius: 8,
-                fontFamily: "var(--font-mono)", fontSize: 15, background: "var(--surface)",
-                color: "var(--ink)", outline: "none",
-              }}
+              style={{ display: "block", width: "100%", marginTop: 8, marginBottom: 28, padding: "12px 16px", border: "1px solid var(--border-strong)", borderRadius: 8, fontFamily: "var(--font-mono)", fontSize: 15, background: "var(--surface)", color: "var(--ink)", outline: "none" }}
               onFocus={e => { e.target.style.borderColor = "var(--accent)" }}
               onBlur={e => { e.target.style.borderColor = "var(--border-strong)" }}
             />
             <div style={{ display: "flex", gap: 12 }}>
-              <button onClick={() => setShowExportModal(false)} style={{ flex: 1, padding: "11px 0", background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", color: "var(--ink-muted)" }}>
-                Cancel
-              </button>
-              <button onClick={handleExportConfirm} disabled={!exportAccountId.trim()} style={{ flex: 2, padding: "11px 0", background: exportAccountId.trim() ? "var(--accent)" : "var(--surface-sunken)", color: exportAccountId.trim() ? "#000" : "var(--ink-faint)", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: exportAccountId.trim() ? "pointer" : "not-allowed" }}>
-                Download CSV
-              </button>
+              <button onClick={() => setShowExportModal(false)} style={{ flex: 1, padding: "11px 0", background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", color: "var(--ink-muted)" }}>Cancel</button>
+              <button onClick={handleExportConfirm} disabled={!exportAccountId.trim()} style={{ flex: 2, padding: "11px 0", background: exportAccountId.trim() ? "var(--accent)" : "var(--surface-sunken)", color: exportAccountId.trim() ? "#000" : "var(--ink-faint)", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: exportAccountId.trim() ? "pointer" : "not-allowed" }}>Download CSV</button>
             </div>
           </div>
         </div>
@@ -131,9 +121,7 @@ export default function Home() {
       {/* Header */}
       <header style={{ borderBottom: "1px solid var(--border)", background: "rgba(8,15,24,0.95)", backdropFilter: "blur(12px)", padding: "0 40px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64, position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-          <span style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--accent)", letterSpacing: "-0.5px", textShadow: "0 0 20px rgba(0,200,255,0.4)" }}>
-            Securities Mapper
-          </span>
+          <span style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--accent)", letterSpacing: "-0.5px", textShadow: "0 0 20px rgba(0,200,255,0.4)" }}>Securities Mapper</span>
           <span style={{ fontSize: 11, color: "var(--ink-faint)", fontFamily: "var(--font-mono)", letterSpacing: "0.08em", textTransform: "uppercase" }}>v1.0</span>
         </div>
         <div>
@@ -149,9 +137,7 @@ export default function Home() {
 
       <main style={{ flex: 1, maxWidth: 1100, width: "100%", margin: "0 auto", padding: "40px 40px 80px" }}>
         {dataError && (
-          <div style={{ marginBottom: 24, padding: "10px 16px", background: "var(--amber-light)", color: "var(--amber)", borderRadius: 8, fontSize: 13, border: "1px solid rgba(0,200,255,0.2)" }}>
-            ⚠ {dataError}
-          </div>
+          <div style={{ marginBottom: 24, padding: "10px 16px", background: "var(--amber-light)", color: "var(--amber)", borderRadius: 8, fontSize: 13, border: "1px solid rgba(0,200,255,0.2)" }}>⚠ {dataError}</div>
         )}
 
         <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 32, alignItems: "start" }}>
@@ -167,16 +153,8 @@ export default function Home() {
               <div style={{ padding: 6 }}>
                 {MODELS.map(m => (
                   <button key={m.id} onClick={() => { setSelectedModel(m.id); setResults(null) }}
-                    style={{
-                      width: "100%", textAlign: "left", padding: "11px 14px", borderRadius: 7,
-                      background: selectedModel === m.id ? "rgba(0,200,255,0.08)" : "transparent",
-                      border: selectedModel === m.id ? "1px solid rgba(0,200,255,0.25)" : "1px solid transparent",
-                      cursor: "pointer", transition: "all 0.15s",
-                      boxShadow: selectedModel === m.id ? "0 0 12px rgba(0,200,255,0.08)" : "none",
-                    }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: selectedModel === m.id ? "var(--accent)" : "var(--ink)" }}>
-                      {m.label}
-                    </div>
+                    style={{ width: "100%", textAlign: "left", padding: "11px 14px", borderRadius: 7, background: selectedModel === m.id ? "rgba(0,200,255,0.08)" : "transparent", border: selectedModel === m.id ? "1px solid rgba(0,200,255,0.25)" : "1px solid transparent", cursor: "pointer", transition: "all 0.15s", boxShadow: selectedModel === m.id ? "0 0 12px rgba(0,200,255,0.08)" : "none" }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: selectedModel === m.id ? "var(--accent)" : "var(--ink)" }}>{m.label}</div>
                   </button>
                 ))}
               </div>
@@ -193,27 +171,14 @@ export default function Home() {
                   onChange={e => setTickerInput(e.target.value)}
                   placeholder={"Paste tickers here...\nVTI\nIXUS\nAGG\nQQQ, SPY, BND"}
                   rows={10}
-                  style={{
-                    width: "100%", border: "1px solid var(--border)", borderRadius: 8,
-                    padding: "12px 14px", fontFamily: "var(--font-mono)", fontSize: 13,
-                    background: "var(--surface)", color: "var(--ink)", resize: "vertical",
-                    outline: "none", lineHeight: 1.9,
-                  }}
+                  style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 8, padding: "12px 14px", fontFamily: "var(--font-mono)", fontSize: 13, background: "var(--surface)", color: "var(--ink)", resize: "vertical", outline: "none", lineHeight: 1.9 }}
                   onFocus={e => { e.target.style.borderColor = "var(--accent)"; e.target.style.boxShadow = "0 0 0 2px rgba(0,200,255,0.1)" }}
                   onBlur={e => { e.target.style.borderColor = "var(--border)"; e.target.style.boxShadow = "none" }}
                 />
                 <button
                   onClick={handleMap}
                   disabled={loading || dataLoading || !tickerInput.trim()}
-                  style={{
-                    marginTop: 10, width: "100%", padding: "12px 0",
-                    background: loading || dataLoading || !tickerInput.trim() ? "var(--surface-sunken)" : "var(--accent)",
-                    color: loading || dataLoading || !tickerInput.trim() ? "var(--ink-faint)" : "#000",
-                    border: "none", borderRadius: 8, fontFamily: "var(--font-body)", fontSize: 14,
-                    fontWeight: 700, cursor: loading || !tickerInput.trim() ? "not-allowed" : "pointer",
-                    transition: "all 0.15s",
-                    boxShadow: !loading && !dataLoading && tickerInput.trim() ? "0 0 20px rgba(0,200,255,0.3)" : "none",
-                  }}
+                  style={{ marginTop: 10, width: "100%", padding: "12px 0", background: loading || dataLoading || !tickerInput.trim() ? "var(--surface-sunken)" : "var(--accent)", color: loading || dataLoading || !tickerInput.trim() ? "var(--ink-faint)" : "#000", border: "none", borderRadius: 8, fontFamily: "var(--font-body)", fontSize: 14, fontWeight: 700, cursor: loading || !tickerInput.trim() ? "not-allowed" : "pointer", transition: "all 0.15s", boxShadow: !loading && !dataLoading && tickerInput.trim() ? "0 0 20px rgba(0,200,255,0.3)" : "none" }}
                 >
                   {loading ? "Mapping…" : "Run Mapping →"}
                 </button>
@@ -222,9 +187,7 @@ export default function Home() {
 
             {/* Legend */}
             <div className="fade-up-2" style={{ padding: "16px 18px", background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 12 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent)", fontFamily: "var(--font-mono)", marginBottom: 12 }}>
-                Status Legend
-              </div>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent)", fontFamily: "var(--font-mono)", marginBottom: 12 }}>Status Legend</div>
               {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
                 <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                   <span style={{ width: 7, height: 7, borderRadius: "50%", background: cfg.dot, flexShrink: 0, boxShadow: `0 0 6px ${cfg.dot}` }} />
@@ -245,13 +208,11 @@ export default function Home() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, minHeight: 36 }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
                 <span style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink)" }}>
-                  {visibleResults ? `${visibleResults.length} Securities` : "Results"}
+                  {results ? `${results.length} Securities` : "Results"}
                 </span>
-                {selectedModelInfo && (
-                  <span style={{ fontSize: 12, color: "var(--ink-faint)" }}>→ {selectedModelInfo.label}</span>
-                )}
+                {selectedModelInfo && <span style={{ fontSize: 12, color: "var(--ink-faint)" }}>→ {selectedModelInfo.label}</span>}
               </div>
-              {visibleResults && (
+              {results && (
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   {statusCounts && (
                     <div style={{ display: "flex", gap: 6 }}>
@@ -267,7 +228,7 @@ export default function Home() {
               )}
             </div>
 
-            {!visibleResults && !loading && (
+            {!results && !loading && (
               <div style={{ border: "1px dashed var(--border)", borderRadius: 12, padding: "80px 40px", textAlign: "center", color: "var(--ink-faint)" }}>
                 <div style={{ fontFamily: "var(--font-display)", fontSize: 32, marginBottom: 12, opacity: 0.2 }}>⟳</div>
                 <div style={{ fontSize: 14 }}>Paste tickers and select a model to begin mapping</div>
@@ -280,13 +241,12 @@ export default function Home() {
               </div>
             )}
 
-            {visibleResults && !loading && (
+            {results && !loading && (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 1fr 1fr 110px", padding: "8px 16px", gap: 12, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>
                   <span>Input</span><span>Mapped To</span><span>MS Category</span><span>Asset Class / Region</span><span>Status</span>
                 </div>
-
-                {visibleResults.map((r, idx) => {
+                {results.map((r, idx) => {
                   const cfg = STATUS_CONFIG[r.status]
                   return (
                     <div key={r.inputTicker + idx} className="fade-up"
@@ -350,11 +310,7 @@ export default function Home() {
 }
 
 function Chip({ label, color, bg, glow }: { label: string; color: string; bg: string; glow: string }) {
-  return (
-    <span style={{ fontSize: 11, padding: "3px 9px", borderRadius: 20, background: bg, color, fontWeight: 700, border: `1px solid ${glow}33`, boxShadow: `0 0 8px ${glow}22` }}>
-      {label}
-    </span>
-  )
+  return <span style={{ fontSize: 11, padding: "3px 9px", borderRadius: 20, background: bg, color, fontWeight: 700, border: `1px solid ${glow}33`, boxShadow: `0 0 8px ${glow}22` }}>{label}</span>
 }
 
 function StatusBadge({ cfg }: { cfg: typeof STATUS_CONFIG[keyof typeof STATUS_CONFIG] }) {
