@@ -52,6 +52,6 @@ export interface MappedSecurity {
     weight?: number        // set when input splits into multiple (e.g. 0.7 / 0.3)
     note?: string
   }[]
-  status: "mapped" | "split" | "no-match" | "not-in-model" | "excluded"
+  status: "mapped" | "split" | "no-match" | "not-in-model" |
 }
  
