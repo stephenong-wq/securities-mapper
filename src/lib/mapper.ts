@@ -74,7 +74,8 @@ export function mapSecurities(
   modelId: ModelId,
   msData: MorningstarRow[],
   modelUniverse: ModelUniverseRow[]
-): MappedSecurity[] {
+  ): MappedSecurity[] {
+  const results: (MappedSecurity | null)[] = inputTickers
   const msMap = new Map<string, MorningstarRow>()
   msData.forEach(r => msMap.set(r.ticker.toUpperCase(), r))
   const universeForModel = modelUniverse.filter(r => r.modelId === modelId)
