@@ -1,356 +1,232 @@
-"use client"
-import { useState, useEffect, useCallback } from "react"
-import { MODELS } from "@/lib/types"
-import type { ModelId, MappedSecurity, MorningstarRow, ModelUniverseRow } from "@/lib/types"
+import type { MorningstarRow, ModelUniverseRow, ModelId, MappedSecurity, MsStyle } from "./types"
 
-const STATUS_CONFIG = {
-  mapped:        { label: "Mapped",         bg: "var(--green-light)",  color: "var(--green)",       dot: "#3db87a" },
-  split:         { label: "Split",          bg: "var(--split-light)",  color: "var(--split-color)", dot: "#9b7fe8" },
-  "not-in-model":{ label: "No Model Match", bg: "var(--amber-light)",  color: "var(--amber)",       dot: "#e0a030" },
-  "no-match":    { label: "Unknown",        bg: "var(--red-light)",    color: "var(--red)",         dot: "#e05555" },
+// ─── Index/benchmark fingerprinting ───────────────────────────────────────────
+function indexFingerprint(name: string): string[] {
+  const n = name.toLowerCase()
+    .replace(/ishares|vanguard|schwab|spdr|invesco|fidelity|dimensional|avantis|jpmorgan|wisdomtree|first trust|blackrock|pimco|state street|columbia|pacer|global x|franklin|nuveen|abrdn|goldman sachs/gi, "")
+    .replace(/etf|fund|trust|index|portfolio|series/gi, "")
+    .trim()
+
+  const signals: string[] = []
+
+  if (/s&p\s*500|sp500/.test(n))           signals.push("sp500")
+  if (/s&p\s*100/.test(n))                  signals.push("sp100")
+  if (/total\s*(stock|market|us)/.test(n))  signals.push("total-us")
+  if (/russell\s*2000|r2000/.test(n))       signals.push("russell2000")
+  if (/russell\s*1000/.test(n))             signals.push("russell1000")
+  if (/russell\s*3000/.test(n))             signals.push("russell3000")
+  if (/nasdaq|qqq|100/.test(n))             signals.push("nasdaq100")
+  if (/crsp\s*us\s*large/.test(n))          signals.push("crsp-large")
+  if (/crsp\s*us\s*small/.test(n))          signals.push("crsp-small")
+  if (/crsp\s*us\s*total/.test(n))          signals.push("crsp-total")
+  if (/value/.test(n))                      signals.push("value")
+  if (/growth/.test(n))                     signals.push("growth")
+  if (/blend/.test(n))                      signals.push("blend")
+  if (/equal\s*weight/.test(n))             signals.push("equal-weight")
+  if (/min(imum)?\s*vol(atility)?|low\s*vol/.test(n)) signals.push("min-vol")
+  if (/momentum/.test(n))                   signals.push("momentum")
+  if (/quality/.test(n))                    signals.push("quality")
+  if (/small[\s-]cap|small\s*co/.test(n))  signals.push("small-cap")
+  if (/mid[\s-]cap/.test(n))               signals.push("mid-cap")
+  if (/large[\s-]cap/.test(n))             signals.push("large-cap")
+  if (/multi[\s-]factor|factor/.test(n))   signals.push("factor")
+  if (/eafe/.test(n))                       signals.push("eafe")
+  if (/msci\s*world/.test(n))              signals.push("msci-world")
+  if (/ftse\s*dev/.test(n))               signals.push("ftse-developed")
+  if (/ftse\s*em|emerging/.test(n))        signals.push("emerging")
+  if (/ex[\s-]china/.test(n))              signals.push("ex-china")
+  if (/acwi/.test(n))                      signals.push("acwi")
+  if (/international|intl|global/.test(n)) signals.push("international")
+  if (/aggregate|agg/.test(n))             signals.push("aggregate")
+  if (/treasury|govt|government/.test(n))  signals.push("treasury")
+  if (/tips|inflation[\s-]protect/.test(n))signals.push("tips")
+  if (/high\s*yield|hy/.test(n))           signals.push("high-yield")
+  if (/muni|municipal/.test(n))            signals.push("muni")
+  if (/mortgage|mbs/.test(n))              signals.push("mbs")
+  if (/corporate|corp/.test(n))            signals.push("corporate")
+  if (/short[\s-]term|1[\s-]3|0[\s-]3/.test(n)) signals.push("short-term")
+  if (/long[\s-]term|20\+|10[\s-]20/.test(n))   signals.push("long-term")
+  if (/intermediate|inter/.test(n))        signals.push("intermediate")
+  if (/floating\s*rate/.test(n))           signals.push("floating-rate")
+  if (/convertible/.test(n))               signals.push("convertible")
+  if (/em(erging)?\s*(market)?\s*bond/.test(n))  signals.push("em-bond")
+  if (/california|ca\s*muni/.test(n))      signals.push("california-muni")
+  if (/technology|tech/.test(n))           signals.push("sector-tech")
+  if (/health\s*care|healthcare/.test(n))  signals.push("sector-healthcare")
+  if (/energy/.test(n))                    signals.push("sector-energy")
+  if (/consumer\s*disc/.test(n))           signals.push("sector-cons-disc")
+  if (/real\s*estate|reit/.test(n))        signals.push("sector-realestate")
+  if (/infrastructure/.test(n))            signals.push("sector-infra")
+  if (/aerospace|defense/.test(n))         signals.push("sector-defense")
+  if (/gold/.test(n))                      signals.push("commodity-gold")
+  if (/commodity|commodit/.test(n))        signals.push("commodity-broad")
+
+  return signals
 }
 
-function styleColor(style: string) {
-  if (style.includes("Value"))    return { bg: "#0f1e35", color: "#5a9fd4" }
-  if (style.includes("Growth"))   return { bg: "#1e0f2a", color: "#a07fd4" }
-  if (style.includes("Emerging")) return { bg: "#2a1e08", color: "#e0a030" }
-  if (style.includes("Bond") || style.includes("Protected")) return { bg: "#0d2a1e", color: "#3db87a" }
-  if (style.includes("Real Estate") || style.includes("Commodities")) return { bg: "#1a1535", color: "#9b7fe8" }
-  return { bg: "#1a2535", color: "#9aabc2" }
+function fingerprintOverlap(a: string[], b: string[]): number {
+  const setA = new Set(a)
+  return b.filter(x => setA.has(x)).length
 }
 
-function exportCSV(results: MappedSecurity[], accountId: string) {
-  const rows = [["Account ID", "Targeted", "Equivalent", "Equivalent Buy Priority", "Equivalent Sell Priority", "Delete"]]
-  results.forEach(r => {
-    if (r.mappings.length === 0) return
-    r.mappings.forEach(m => {
-      rows.push([accountId, m.ticker, r.inputTicker, "Do Not Buy", "Default", ""])
+export function mapSecurities(
+  inputTickers: string[],
+  modelId: ModelId,
+  msData: MorningstarRow[],
+  modelUniverse: ModelUniverseRow[]
+): MappedSecurity[] {
+  const msMap = new Map<string, MorningstarRow>()
+  msData.forEach(r => msMap.set(r.ticker.toUpperCase(), r))
+  const universeForModel = modelUniverse.filter(r => r.modelId === modelId)
+  const universeTickers = new Set(universeForModel.map(r => r.ticker.toUpperCase()))
+
+  return inputTickers
+    .map(raw => {
+      const ticker = raw.toUpperCase().trim()
+      const inputMs = msMap.get(ticker)
+
+      // Already in model — skip entirely
+      if (universeTickers.has(ticker)) return null
+
+      if (!inputMs) return { inputTicker: ticker, status: "no-match", mappings: [] } satisfies MappedSecurity
+
+      if (inputMs.splitRegions && inputMs.splitRegions.length > 0) {
+        const splitMappings = inputMs.splitRegions.flatMap(split => {
+          const candidates = findCandidates(msMap, universeForModel, inputMs.assetClass, split.region)
+          return candidates.slice(0, 1).map(c => ({
+            ticker: c.ticker, name: c.name, msStyle: c.msStyle,
+            assetClass: c.assetClass, region: c.region,
+            weight: split.weight,
+            note: `${Math.round(split.weight * 100)}% ${split.region} exposure`,
+          }))
+        })
+        if (splitMappings.length > 0) return { inputTicker: ticker, status: "split", mappings: splitMappings } satisfies MappedSecurity
+      }
+
+      const candidates = findCandidates(msMap, universeForModel, inputMs.assetClass, inputMs.region)
+      if (candidates.length === 0) return { inputTicker: ticker, status: "not-in-model", mappings: [] } satisfies MappedSecurity
+
+      const inputFingerprint = indexFingerprint(inputMs.name)
+      const ranked = candidates.sort((a, b) => {
+        const aFp = fingerprintOverlap(inputFingerprint, indexFingerprint(a.name))
+        const bFp = fingerprintOverlap(inputFingerprint, indexFingerprint(b.name))
+        if (bFp !== aFp) return bFp - aFp
+        return styleMatchScore(inputMs.msStyle, b.msStyle) - styleMatchScore(inputMs.msStyle, a.msStyle)
+      })
+
+      const best = ranked[0]
+      return {
+        inputTicker: ticker, status: "mapped",
+        mappings: [{ ticker: best.ticker, name: best.name, msStyle: best.msStyle, assetClass: best.assetClass, region: best.region }],
+      } satisfies MappedSecurity
     })
-  })
-  const csv = rows.map(r => r.map(c => `"${c}"`).join(",")).join("\n")
-  const blob = new Blob([csv], { type: "text/csv" })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = `AccountEquivalent-${accountId || "export"}-${new Date().toISOString().slice(0,10)}.csv`
-  a.click()
+    .filter((r): r is MappedSecurity => r !== null)
 }
 
-export default function Home() {
-  const [selectedModel, setSelectedModel] = useState<ModelId>("stp")
-  const [tickerInput, setTickerInput] = useState("")
-  const [results, setResults] = useState<MappedSecurity[] | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [dataLoading, setDataLoading] = useState(true)
-  const [msData, setMsData] = useState<MorningstarRow[]>([])
-  const [universeData, setUniverseData] = useState<ModelUniverseRow[]>([])
-  const [usingBlob, setUsingBlob] = useState(false)
-  const [dataError, setDataError] = useState<string | null>(null)
-  const [showExportModal, setShowExportModal] = useState(false)
-  const [exportAccountId, setExportAccountId] = useState("")
+function findCandidates(
+  msMap: Map<string, MorningstarRow>,
+  universeRows: ModelUniverseRow[],
+  assetClass: string,
+  region: string
+): MorningstarRow[] {
+  return universeRows
+    .map(r => msMap.get(r.ticker.toUpperCase()))
+    .filter((ms): ms is MorningstarRow => {
+      if (!ms) return false
+      const classMatch = ms.assetClass === assetClass
+      const regionMatch =
+        ms.region === region ||
+        (region === "Global ex-US" && (ms.region === "Developed ex-US" || ms.region === "Emerging")) ||
+        (ms.region === "Global ex-US" && (region === "Developed ex-US" || region === "Emerging"))
+      return classMatch && regionMatch
+    })
+}
 
-  useEffect(() => {
-    fetch("/api/data")
-      .then(r => r.json())
-      .then(d => {
-        setMsData(d.msData)
-        setUniverseData(d.universeData)
-        setUsingBlob(d.usingBlob)
-        if (d.error) setDataError(d.error)
-      })
-      .catch(() => setDataError("Failed to load reference data"))
-      .finally(() => setDataLoading(false))
-  }, [])
+function styleMatchScore(input: MsStyle, candidate: MsStyle): number {
+  if (input === candidate) return 3
+  const ip = input.split(" "), cp = candidate.split(" ")
+  if (ip[0] === cp[0]) return 2
+  if (ip[ip.length-1] === cp[cp.length-1]) return 1
+  return 0
+}
 
-  const handleMap = useCallback(async () => {
-    const tickers = tickerInput.split(/[\n,]+/).map(t => t.trim().toUpperCase()).filter(Boolean)
-    if (!tickers.length) return
-    setLoading(true)
-    setResults(null)
-    try {
-      const res = await fetch("/api/map", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tickers, modelId: selectedModel, msData, universeData }),
-      })
-      const data = await res.json()
-      setResults(data.results)
-    } finally {
-      setLoading(false)
+function inferRegion(msCategory: string, assetClass: string): string {
+  const cat = msCategory.toLowerCase(), ac = assetClass.toLowerCase()
+  if (cat.includes("emerging")) return "Emerging"
+  if (cat.includes("foreign") || cat.includes("europe") || cat.includes("eafe") ||
+      cat.includes("international") || ac.includes("global equity")) return "Developed ex-US"
+  if (ac.includes("global") || cat.includes("global")) return "Global"
+  if (ac.includes("commodities")) return "Global"
+  return "US"
+}
+
+function inferAssetClass(msCategory: string, rawAssetClass: string): string {
+  const cat = msCategory.toLowerCase(), ac = rawAssetClass.toLowerCase()
+  if (ac.includes("fixed income") || cat.includes("bond") || cat.includes("muni") ||
+      cat.includes("securitized") || cat.includes("ultrashort") || cat.includes("loan")) return "Fixed Income"
+  if (ac.includes("commodities") || cat.includes("commodit") ||
+      cat.includes("precious metals") || cat.includes("natural resources")) return "Real Assets"
+  if (cat.includes("real estate")) return "Real Assets"
+  if (ac.includes("global emerging markets equity") || cat.includes("diversified emerging")) return "Intl Equity"
+  if (ac.includes("global equity") || cat.includes("foreign") || cat.includes("europe") ||
+      cat.includes("india") || cat.includes("china")) return "Intl Equity"
+  if (ac.includes("us equity") || cat.includes("large blend") || cat.includes("large value") ||
+      cat.includes("large growth") || cat.includes("mid-cap") || cat.includes("small")) return "US Equity"
+  if (ac.includes("allocation") || cat.includes("allocation")) return "Allocation"
+  if (ac.includes("alternative") || cat.includes("market neutral") ||
+      cat.includes("long/short") || cat.includes("systematic trend")) return "Alternative"
+  return "Other"
+}
+
+export function parseMorningstarExcel(rows: Record<string, string>[]): MorningstarRow[] {
+  return rows.map(row => {
+    const get = (...keys: string[]) => {
+      for (const k of keys) {
+        const found = Object.keys(row).find(rk =>
+          rk.toLowerCase().replace(/[\s_-]/g,"") === k.toLowerCase().replace(/[\s_-]/g,""))
+        if (found && row[found]) return row[found].trim()
+      }
+      return ""
     }
-  }, [tickerInput, selectedModel, msData, universeData])
-
-  const handleExportClick = () => { setExportAccountId(""); setShowExportModal(true) }
-  const handleExportConfirm = () => { if (!visibleResults) return; exportCSV(visibleResults, exportAccountId); setShowExportModal(false) }
-
-  const selectedModelInfo = MODELS.find(m => m.id === selectedModel)!
-  const visibleResults = results ? results.filter(r => r.status !== "excluded") : null
-  const statusCounts = visibleResults ? {
-    mapped: visibleResults.filter(r => r.status === "mapped").length,
-    split:  visibleResults.filter(r => r.status === "split").length,
-    warn:   visibleResults.filter(r => r.status === "not-in-model" || r.status === "no-match").length,
-  } : null
-
-  return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
-
-      {/* Export Modal */}
-      {showExportModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "var(--surface-raised)", borderRadius: 14, padding: "48px 48px", width: 600, boxShadow: "0 8px 60px rgba(0,0,0,0.5)", border: "1px solid var(--border-strong)" }}>
-            <div style={{ fontFamily: "var(--font-display)", fontSize: 20, marginBottom: 8, color: "var(--ink)" }}>Export AccountEquivalent</div>
-            <div style={{ fontSize: 13, color: "var(--ink-faint)", marginBottom: 24 }}>Enter the Account ID to include in the export file.</div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-muted)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Account ID</label>
-            <input
-              autoFocus
-              value={exportAccountId}
-              onChange={e => setExportAccountId(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleExportConfirm()}
-              placeholder="e.g. 12345678"
-              style={{
-                display: "block", width: "100%", marginTop: 8, marginBottom: 28,
-                padding: "12px 16px", border: "1px solid var(--border-strong)", borderRadius: 8,
-                fontFamily: "var(--font-mono)", fontSize: 15, background: "var(--surface)",
-                color: "var(--ink)", outline: "none",
-              }}
-              onFocus={e => { e.target.style.borderColor = "var(--accent)" }}
-              onBlur={e => { e.target.style.borderColor = "var(--border-strong)" }}
-            />
-            <div style={{ display: "flex", gap: 12 }}>
-              <button onClick={() => setShowExportModal(false)} style={{ flex: 1, padding: "11px 0", background: "var(--surface-sunken)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", color: "var(--ink-muted)" }}>
-                Cancel
-              </button>
-              <button onClick={handleExportConfirm} disabled={!exportAccountId.trim()} style={{ flex: 2, padding: "11px 0", background: exportAccountId.trim() ? "var(--accent)" : "var(--surface-sunken)", color: exportAccountId.trim() ? "white" : "var(--ink-faint)", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: exportAccountId.trim() ? "pointer" : "not-allowed" }}>
-                Download CSV
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Header */}
-      <header style={{ borderBottom: "1px solid var(--border)", background: "var(--surface-raised)", padding: "0 40px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64, position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-          <span style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--accent)", letterSpacing: "-0.5px" }}>Securities Mapper</span>
-          <span style={{ fontSize: 11, color: "var(--ink-faint)", fontFamily: "var(--font-mono)", letterSpacing: "0.08em", textTransform: "uppercase" }}>v1.0</span>
-        </div>
-        <div>
-          {dataLoading ? (
-            <span style={{ fontSize: 12, color: "var(--ink-faint)" }}>Loading data…</span>
-          ) : (
-            <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: usingBlob ? "var(--green)" : "var(--amber)", background: usingBlob ? "var(--green-light)" : "var(--amber-light)", padding: "3px 10px", borderRadius: 20 }}>
-              {usingBlob ? "● Live data" : "● Sample data"}
-            </span>
-          )}
-        </div>
-      </header>
-
-      <main style={{ flex: 1, maxWidth: 1100, width: "100%", margin: "0 auto", padding: "40px 40px 80px" }}>
-        {dataError && (
-          <div style={{ marginBottom: 24, padding: "10px 16px", background: "var(--amber-light)", color: "var(--amber)", borderRadius: 8, fontSize: 13, border: "1px solid #5a3a08" }}>
-            ⚠ {dataError}
-          </div>
-        )}
-
-        <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 32, alignItems: "start" }}>
-
-          {/* Left panel */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-
-            {/* Model selector */}
-            <div className="fade-up" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
-              <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)" }}>
-                <span style={{ fontFamily: "var(--font-display)", fontSize: 14, color: "var(--ink-muted)", letterSpacing: "0.04em" }}>SELECT MODEL</span>
-              </div>
-              <div style={{ padding: 6 }}>
-                {MODELS.map(m => (
-                  <button key={m.id} onClick={() => { setSelectedModel(m.id); setResults(null) }}
-                    style={{
-                      width: "100%", textAlign: "left", padding: "11px 14px", borderRadius: 7,
-                      background: selectedModel === m.id ? "var(--accent-light)" : "transparent",
-                      border: selectedModel === m.id ? "1px solid var(--border-strong)" : "1px solid transparent",
-                      cursor: "pointer", transition: "all 0.15s",
-                    }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: selectedModel === m.id ? "var(--accent)" : "var(--ink)" }}>
-                      {m.label}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Input */}
-            <div className="fade-up-1" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
-              <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)" }}>
-                <span style={{ fontFamily: "var(--font-display)", fontSize: 14, color: "var(--ink-muted)", letterSpacing: "0.04em" }}>INPUT SECURITIES</span>
-              </div>
-              <div style={{ padding: 14 }}>
-                <textarea
-                  value={tickerInput}
-                  onChange={e => setTickerInput(e.target.value)}
-                  placeholder={"Paste tickers here...\nVTI\nIXUS\nAGG\nQQQ, SPY, BND"}
-                  rows={10}
-                  style={{
-                    width: "100%", border: "1px solid var(--border)", borderRadius: 8,
-                    padding: "12px 14px", fontFamily: "var(--font-mono)", fontSize: 13,
-                    background: "var(--surface)", color: "var(--ink)", resize: "vertical",
-                    outline: "none", lineHeight: 1.9,
-                  }}
-                  onFocus={e => { e.target.style.borderColor = "var(--accent)" }}
-                  onBlur={e => { e.target.style.borderColor = "var(--border)" }}
-                />
-                <button
-                  onClick={handleMap}
-                  disabled={loading || dataLoading || !tickerInput.trim()}
-                  style={{
-                    marginTop: 10, width: "100%", padding: "12px 0",
-                    background: loading || dataLoading || !tickerInput.trim() ? "var(--surface-sunken)" : "var(--accent)",
-                    color: loading || dataLoading || !tickerInput.trim() ? "var(--ink-faint)" : "white",
-                    border: "none", borderRadius: 8, fontFamily: "var(--font-body)", fontSize: 14,
-                    fontWeight: 600, cursor: loading || !tickerInput.trim() ? "not-allowed" : "pointer",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  {loading ? "Mapping…" : "Run Mapping →"}
-                </button>
-              </div>
-            </div>
-
-            {/* Legend */}
-            <div className="fade-up-2" style={{ padding: "16px 18px", background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 12 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-faint)", marginBottom: 12 }}>
-                Status Legend
-              </div>
-              {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-                <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: cfg.dot, flexShrink: 0 }} />
-                  <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>
-                    <strong style={{ color: "var(--ink)" }}>{cfg.label}</strong>
-                    {key === "mapped"        && " — equivalent found in model"}
-                    {key === "split"         && " — maps to multiple tickers"}
-                    {key === "not-in-model"  && " — not available in this model"}
-                    {key === "no-match"      && " — ticker not in Morningstar data"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Right panel */}
-          <div className="fade-up-2">
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, minHeight: 36 }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-                <span style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink)" }}>
-                  {visibleResults ? `${visibleResults.length} Securities` : "Results"}
-                </span>
-                {selectedModelInfo && (
-                  <span style={{ fontSize: 12, color: "var(--ink-faint)" }}>→ {selectedModelInfo.label}</span>
-                )}
-              </div>
-              {visibleResults && (
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  {statusCounts && (
-                    <div style={{ display: "flex", gap: 6 }}>
-                      {statusCounts.mapped > 0 && <Chip label={`${statusCounts.mapped} mapped`} color="var(--green)" bg="var(--green-light)" />}
-                      {statusCounts.split  > 0 && <Chip label={`${statusCounts.split} split`}   color="var(--split-color)" bg="var(--split-light)" />}
-                      {statusCounts.warn   > 0 && <Chip label={`${statusCounts.warn} issues`}   color="var(--red)" bg="var(--red-light)" />}
-                    </div>
-                  )}
-                  <button onClick={handleExportClick} style={{ padding: "3px 12px", background: "#1e3a5a", color: "var(--accent)", border: "1px solid var(--border-strong)", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                    Export
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {!visibleResults && !loading && (
-              <div style={{ border: "1px dashed var(--border)", borderRadius: 12, padding: "80px 40px", textAlign: "center", color: "var(--ink-faint)" }}>
-                <div style={{ fontFamily: "var(--font-display)", fontSize: 32, marginBottom: 12, opacity: 0.2 }}>⟳</div>
-                <div style={{ fontSize: 14 }}>Paste tickers and select a model to begin mapping</div>
-              </div>
-            )}
-
-            {loading && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {[1,2,3,4,5].map(i => <div key={i} className="skeleton" style={{ height: 72, borderRadius: 10 }} />)}
-              </div>
-            )}
-
-            {visibleResults && !loading && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 1fr 1fr 110px", padding: "8px 16px", gap: 12, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-faint)" }}>
-                  <span>Input</span><span>Mapped To</span><span>MS Category</span><span>Asset Class / Region</span><span>Status</span>
-                </div>
-
-                {visibleResults.map((r, idx) => {
-                  const cfg = STATUS_CONFIG[r.status]
-                  return (
-                    <div key={r.inputTicker + idx} className="fade-up"
-                      style={{ animationDelay: `${idx * 0.03}s`, background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
-                      {r.mappings.length === 0 && (
-                        <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 1fr 1fr 110px", padding: "14px 16px", gap: 12, alignItems: "center" }}>
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 600, color: "var(--ink)" }}>{r.inputTicker}</span>
-                          <span style={{ fontSize: 13, color: "var(--ink-faint)", fontStyle: "italic" }}>—</span>
-                          <span /><span /><StatusBadge cfg={cfg} />
-                        </div>
-                      )}
-                      {r.mappings.map((m, mi) => {
-                        const sc = styleColor(m.msStyle)
-                        return (
-                          <div key={mi} style={{ display: "grid", gridTemplateColumns: "110px 1fr 1fr 1fr 110px", padding: mi === 0 ? "14px 16px" : "8px 16px 14px 16px", gap: 12, alignItems: "center", borderTop: mi > 0 ? "1px dashed var(--border)" : "none", background: mi > 0 ? "var(--surface-sunken)" : "transparent" }}>
-                            <span style={{ fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 600, color: "var(--ink)", visibility: mi === 0 ? "visible" : "hidden" }}>{r.inputTicker}</span>
-                            <div>
-                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: "var(--accent)" }}>{m.ticker}</span>
-                                {m.weight !== undefined && (
-                                  <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 20, background: "var(--split-light)", color: "var(--split-color)", fontWeight: 700 }}>
-                                    {Math.round(m.weight * 100)}%
-                                  </span>
-                                )}
-                              </div>
-                              <div style={{ fontSize: 11, color: "var(--ink-faint)", marginTop: 2 }} title={m.name}>
-                                {m.name.length > 40 ? m.name.slice(0,38) + "…" : m.name}
-                              </div>
-                            </div>
-                            <div>
-                              <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, background: sc.bg, color: sc.color, fontWeight: 600 }}>
-                                {m.msStyle}
-                              </span>
-                            </div>
-                            <div style={{ fontSize: 12, color: "var(--ink-muted)" }}>
-                              <div>{m.assetClass}</div>
-                              <div style={{ fontSize: 11, color: "var(--ink-faint)" }}>{m.region}</div>
-                            </div>
-                            <div style={{ visibility: mi === 0 ? "visible" : "hidden" }}><StatusBadge cfg={cfg} /></div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      </main>
-
-      <footer style={{ borderTop: "1px solid var(--border)", padding: "16px 40px", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>
-        <span>Securities Mapper · {usingBlob ? "Live Blob Data" : "Sample Data Mode"}</span>
-        <span>Morningstar data updated monthly</span>
-      </footer>
-    </div>
-  )
+    const ticker     = get("symbol","ticker").toUpperCase()
+    const msCategory = get("morningstar category","morningstarcategory","category")
+    const rawAC      = get("asset class","assetclass")
+    const name       = get("name","fund name","fundname") || ticker
+    const factors    = get("factors","factor").split(",").map(s => s.trim()).filter(Boolean)
+    const splitStr   = get("splitregions","regions","split regions")
+    let splitRegions: { region: string; weight: number }[] | undefined
+    if (splitStr) {
+      splitRegions = splitStr.split(",").map(s => {
+        const [region, weight] = s.split(":")
+        return { region: region?.trim() || "", weight: parseFloat(weight) || 0 }
+      }).filter(r => r.region)
+    }
+    return {
+      ticker, name,
+      msStyle: (msCategory || "Unknown") as MsStyle,
+      assetClass: inferAssetClass(msCategory, rawAC),
+      region: inferRegion(msCategory, rawAC),
+      factors,
+      ...(splitRegions ? { splitRegions } : {}),
+    }
+  }).filter(r => r.ticker)
 }
 
-function Chip({ label, color, bg }: { label: string; color: string; bg: string }) {
-  return <span style={{ fontSize: 11, padding: "3px 9px", borderRadius: 20, background: bg, color, fontWeight: 700 }}>{label}</span>
-}
-
-function StatusBadge({ cfg }: { cfg: typeof STATUS_CONFIG[keyof typeof STATUS_CONFIG] }) {
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, padding: "3px 9px", borderRadius: 20, background: cfg.bg, color: cfg.color, fontWeight: 600, whiteSpace: "nowrap" }}>
-      <span style={{ width: 6, height: 6, borderRadius: "50%", background: cfg.dot }} />
-      {cfg.label}
-    </span>
-  )
+export function parseModelUniverseExcel(rows: Record<string, string>[]): ModelUniverseRow[] {
+  return rows.map(row => {
+    const get = (...keys: string[]) => {
+      for (const k of keys) {
+        const found = Object.keys(row).find(rk =>
+          rk.toLowerCase().replace(/\s/g,"") === k.toLowerCase().replace(/\s/g,""))
+        if (found && row[found]) return row[found].trim()
+      }
+      return ""
+    }
+    return {
+      modelId: get("modelid","model") as ModelId,
+      ticker:  get("ticker","symbol").toUpperCase(),
+      name:    get("name","fundname"),
+      role:    get("role","description"),
+    }
+  }).filter(r => r.modelId && r.ticker)
 }
