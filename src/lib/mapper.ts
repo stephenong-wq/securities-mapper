@@ -97,13 +97,9 @@ export function mapSecurities(
     const ticker = raw.toUpperCase().trim()
     const inputMs = msMap.get(ticker)
 
-    // Already in model — map to itself
+    // Already in model — exclude from results
     if (universeTickers.has(ticker)) {
-      const ms = inputMs ?? { name: ticker, msStyle: "Unknown" as MsStyle, assetClass: "-", region: "-" }
-      return {
-        inputTicker: ticker, status: "mapped",
-        mappings: [{ ticker, name: ms.name, msStyle: ms.msStyle, assetClass: ms.assetClass, region: ms.region }],
-      } satisfies MappedSecurity
+      return { inputTicker: ticker, status: "excluded", mappings: [] } satisfies MappedSecurity
     }
 
     if (!inputMs) return { inputTicker: ticker, status: "no-match", mappings: [] } satisfies MappedSecurity
