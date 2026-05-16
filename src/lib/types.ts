@@ -9,7 +9,7 @@ export const MODELS = [
 ] as const
 
 export type ModelId = typeof MODELS[number]["id"]
-
+ 
 // ─── Morningstar Style Box ─────────────────────────────────────────────────────
 export type MsStyle =
   | "Large Value" | "Large Blend" | "Large Growth"
@@ -21,25 +21,25 @@ export type MsStyle =
   | "Inflation-Protected Bond" | "High Yield Bond" | "World Bond"
   | "Real Estate" | "Commodities" | "Allocation"
   | "Unknown"
-
+ 
 // ─── Data Shapes ──────────────────────────────────────────────────────────────
 export interface MorningstarRow {
   ticker: string
   name: string
   msStyle: MsStyle
-  assetClass: string
-  region: string
-  factors: string[]
-  splitRegions?: { region: string; weight: number }[]
+  assetClass: string       // e.g. "US Equity", "Intl Equity", "Fixed Income"
+  region: string           // e.g. "US", "Developed ex-US", "Emerging", "Global"
+  factors: string[]        // e.g. ["Value", "Low Vol"]
+  splitRegions?: { region: string; weight: number }[]  // for blended funds like IXUS
 }
-
+ 
 export interface ModelUniverseRow {
   modelId: ModelId
   ticker: string
   name: string
-  role: string
+  role: string             // e.g. "US Large Cap Core", "Emerging Markets"
 }
-
+ 
 // ─── Mapping Output ────────────────────────────────────────────────────────────
 export interface MappedSecurity {
   inputTicker: string
@@ -49,8 +49,9 @@ export interface MappedSecurity {
     msStyle: MsStyle
     assetClass: string
     region: string
-    weight?: number
+    weight?: number        // set when input splits into multiple (e.g. 0.7 / 0.3)
     note?: string
   }[]
-  status: "mapped" | "split" | "no-match" | "not-in-model"
+  status: "mapped" | "split" | "no-match" | "not-in-model" | "excluded"
 }
+ 
