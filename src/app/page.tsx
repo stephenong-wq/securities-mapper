@@ -86,7 +86,6 @@ export default function Home() {
   const [showImportExportModal, setShowImportExportModal] = useState(false)
   const [importExportAccountId, setImportExportAccountId] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
 
   useEffect(() => {
     fetch("/api/data")
@@ -107,8 +106,7 @@ export default function Home() {
     } finally { setManualLoading(false) }
   }, [tickerInput, selectedModel, msData, universeData])
 
-    const handleImport = useCallback(async (file: File) => {
-    setUploadedFile(file)
+  const handleImport = useCallback(async (file: File) => {
     setImportLoading(true); setImportError(null); setImportResult(null); setProcessed(null)
     try {
       const formData = new FormData()
@@ -130,20 +128,9 @@ export default function Home() {
   }
 
   const handleReprocess = useCallback(async () => {
-    if (!uploadedFile) return
-    setImportLoading(true); setImportError(null); setProcessed(null)
-    try {
-      const formData = new FormData()
-      formData.append("file", uploadedFile)
-      if (gainsBudget) formData.append("gainsBudget", gainsBudget)
-      const res = await fetch("/api/import", { method: "POST", body: formData })
-      const data = await res.json()
-      if (data.error) throw new Error(data.error)
-      setProcessed(data.processed)
-    } catch (e) {
-      setImportError(String(e))
-    } finally { setImportLoading(false) }
-  }, [uploadedFile, gainsBudget])
+    if (!fileInputRef.current?.files?.[0]) return
+    handleImport(fileInputRef.current.files[0])
+  }, [handleImport])
 
   const selectedModelInfo = MODELS.find(m => m.id === selectedModel)!
   const manualStatusCounts = manualResults ? {
@@ -361,16 +348,12 @@ export default function Home() {
                 <div style={{ padding: 14 }}>
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    onDragEnter={e => { e.preventDefault(); e.stopPropagation() }}
-                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); (e.currentTarget as HTMLDivElement).style.borderColor = "var(--accent)"; (e.currentTarget as HTMLDivElement).style.background = "rgba(0,200,255,0.06)" }}
-                    onDragLeave={e => { e.preventDefault(); e.stopPropagation(); (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border-strong)"; (e.currentTarget as HTMLDivElement).style.background = "var(--surface)" }}
-                    onDrop={e => { e.preventDefault(); e.stopPropagation(); (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border-strong)"; (e.currentTarget as HTMLDivElement).style.background = "var(--surface)"; const file = e.dataTransfer.files?.[0]; if (file) handleImport(file) }}
                     style={{ border: "1px dashed var(--border-strong)", borderRadius: 8, padding: "32px 20px", textAlign: "center", cursor: "pointer", transition: "all 0.15s", background: "var(--surface)" }}
                     onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--accent)"; (e.currentTarget as HTMLDivElement).style.background = "rgba(0,200,255,0.03)" }}
                     onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border-strong)"; (e.currentTarget as HTMLDivElement).style.background = "var(--surface)" }}
                   >
                     <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>⬆</div>
-                    <div style={{ fontSize: 13, color: "var(--ink-muted)", marginBottom: 4 }}>Drag & drop or click to upload</div>
+                    <div style={{ fontSize: 13, color: "var(--ink-muted)", marginBottom: 4 }}>Click to upload Excel file</div>
                     <div style={{ fontSize: 11, color: "var(--ink-faint)" }}>.xlsx export from rebalancer</div>
                   </div>
                   <input ref={fileInputRef} type="file" accept=".xlsx" onChange={handleFileChange} style={{ display: "none" }} />
@@ -381,7 +364,7 @@ export default function Home() {
                         {importResult.modelName}
                       </div>
                       <div style={{ fontSize: 11, color: "var(--ink-faint)" }}>
-                        {importResult.inModel.length} model holdings · {importResult.unassigned.length} unassigned
+                        {importResult.unassigned.length} unassigned positions
                       </div>
                     </div>
                   )}
@@ -440,9 +423,10 @@ export default function Home() {
             <div className="fade-up-2">
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, minHeight: 36 }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-                <span style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink)" }}>
-                  {processed ? `${processed.length} Positions` : "Results"}
-                </span>
+                  <span style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink)" }}>
+                    {processed ? `${processed.length} Positions` : "Results"}
+                  </span>
+                  {importResult && <span style={{ fontSize: 12, color: "var(--ink-faint)" }}>→ {importResult.modelName}</span>}
                 </div>
                 {processed && (
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -453,7 +437,7 @@ export default function Home() {
                         {importCounts.sellGain  > 0 && <Chip label={`${importCounts.sellGain} gains`}    color="#ffaa00" bg="#1e0800" glow="#ffaa00" />}
                       </div>
                     )}
-                    <button onClick={() => { setImportExportAccountId(""); setShowImportExportModal(true) }}
+                    <button onClick={() => { setImportExportAccountId(importResult?.accountNumber || ""); setShowImportExportModal(true) }}
                       style={{ padding: "3px 12px", background: "rgba(0,200,255,0.08)", color: "var(--accent)", border: "1px solid rgba(0,200,255,0.25)", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-mono)" }}>
                       Export
                     </button>
