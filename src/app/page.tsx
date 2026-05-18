@@ -347,15 +347,12 @@ export default function Home() {
                 <div style={{ padding: 14 }}>
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    onDragOver={e => { e.preventDefault(); (e.currentTarget as HTMLDivElement).style.borderColor = "var(--accent)"; (e.currentTarget as HTMLDivElement).style.background = "rgba(0,200,255,0.06)" }}
-                    onDragLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border-strong)"; (e.currentTarget as HTMLDivElement).style.background = "var(--surface)" }}
-                    onDrop={e => { e.preventDefault(); (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border-strong)"; (e.currentTarget as HTMLDivElement).style.background = "var(--surface)"; const file = e.dataTransfer.files?.[0]; if (file) handleImport(file) }}
                     style={{ border: "1px dashed var(--border-strong)", borderRadius: 8, padding: "32px 20px", textAlign: "center", cursor: "pointer", transition: "all 0.15s", background: "var(--surface)" }}
                     onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--accent)"; (e.currentTarget as HTMLDivElement).style.background = "rgba(0,200,255,0.03)" }}
                     onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border-strong)"; (e.currentTarget as HTMLDivElement).style.background = "var(--surface)" }}
                   >
                     <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>⬆</div>
-                    <div style={{ fontSize: 13, color: "var(--ink-muted)", marginBottom: 4 }}>Drag & drop or click to upload</div>
+                    <div style={{ fontSize: 13, color: "var(--ink-muted)", marginBottom: 4 }}>Click to upload Excel file</div>
                     <div style={{ fontSize: 11, color: "var(--ink-faint)" }}>.xlsx export from rebalancer</div>
                   </div>
                   <input ref={fileInputRef} type="file" accept=".xlsx" onChange={handleFileChange} style={{ display: "none" }} />
@@ -439,7 +436,7 @@ export default function Home() {
                         {importCounts.sellGain  > 0 && <Chip label={`${importCounts.sellGain} gains`}    color="#ffaa00" bg="#1e0800" glow="#ffaa00" />}
                       </div>
                     )}
-                    <button onClick={() => { setImportExportAccountId(""); setShowImportExportModal(true) }}
+                    <button onClick={() => { setImportExportAccountId(importResult?.accountNumber || ""); setShowImportExportModal(true) }}
                       style={{ padding: "3px 12px", background: "rgba(0,200,255,0.08)", color: "var(--accent)", border: "1px solid rgba(0,200,255,0.25)", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-mono)" }}>
                       Export
                     </button>
@@ -479,7 +476,8 @@ export default function Home() {
                     const isGain = p.action === "sell-gain"
                     const dotColor = isMap ? "#00f0c0" : isLoss ? "#ff4488" : "#ffaa00"
                     const badgeBg = isMap ? "#001e18" : isLoss ? "#1e0018" : "#1e0800"
-                    const badgeLabel = isMap ? "Mapped" : isLoss ? "Sell — Loss" : "Sell — Gain"
+                    const isSplit = isMap && p.matches.length > 1
+                    const badgeLabel = isSplit ? "Split Map" : isMap ? "Mapped" : isLoss ? "Sell — Loss" : "Sell — Gain"
 
                     return (
                       <div key={p.holding.ticker + idx} className="fade-up"
@@ -493,10 +491,13 @@ export default function Home() {
                             <div style={{ fontSize: 11, color: "var(--ink-faint)", marginTop: 2 }}>{p.holding.msCategory}</div>
                           </div>
                           <div>
-                            {isMap && p.mappedTo ? (
-                              <div>
-                                <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--accent)", textShadow: "0 0 12px rgba(0,200,255,0.3)" }}>{p.mappedTo}</span>
-                                {p.mappedName && <div style={{ fontSize: 11, color: "var(--ink-faint)", marginTop: 2 }}>{p.mappedName.length > 30 ? p.mappedName.slice(0,28) + "…" : p.mappedName}</div>}
+                            {isMap && p.matches.length > 0 ? (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--accent)", textShadow: "0 0 12px rgba(0,200,255,0.3)" }}>
+                                    {p.matches.map(m => m.ticker).join(" / ")}
+                                  </span>
+                                </div>
                               </div>
                             ) : (
                               <span style={{ fontSize: 12, color: "var(--ink-faint)", fontStyle: "italic" }}>
