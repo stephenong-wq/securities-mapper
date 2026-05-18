@@ -86,6 +86,7 @@ export default function Home() {
   const [showImportExportModal, setShowImportExportModal] = useState(false)
   const [importExportAccountId, setImportExportAccountId] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
 
   useEffect(() => {
     fetch("/api/data")
@@ -106,7 +107,8 @@ export default function Home() {
     } finally { setManualLoading(false) }
   }, [tickerInput, selectedModel, msData, universeData])
 
-  const handleImport = useCallback(async (file: File) => {
+    const handleImport = useCallback(async (file: File) => {
+    setUploadedFile(file)
     setImportLoading(true); setImportError(null); setImportResult(null); setProcessed(null)
     try {
       const formData = new FormData()
@@ -128,9 +130,20 @@ export default function Home() {
   }
 
   const handleReprocess = useCallback(async () => {
-    if (!fileInputRef.current?.files?.[0]) return
-    handleImport(fileInputRef.current.files[0])
-  }, [handleImport])
+    if (!uploadedFile) return
+    setImportLoading(true); setImportError(null); setProcessed(null)
+    try {
+      const formData = new FormData()
+      formData.append("file", uploadedFile)
+      if (gainsBudget) formData.append("gainsBudget", gainsBudget)
+      const res = await fetch("/api/import", { method: "POST", body: formData })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setProcessed(data.processed)
+    } catch (e) {
+      setImportError(String(e))
+    } finally { setImportLoading(false) }
+  }, [uploadedFile, gainsBudget])
 
   const selectedModelInfo = MODELS.find(m => m.id === selectedModel)!
   const manualStatusCounts = manualResults ? {
