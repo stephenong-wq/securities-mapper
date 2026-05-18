@@ -43,12 +43,13 @@ function exportManualCSV(results: MappedSecurity[], accountId: string) {
 // ─── Import CSV export ─────────────────────────────────────────────────────────
 function exportImportCSV(processed: ProcessedHolding[], accountId: string) {
   const rows = [["Account ID", "Targeted", "Equivalent", "Equivalent Buy Priority", "Equivalent Sell Priority", "Delete"]]
-  processed.filter(p => p.action === "map" && p.mappedTo).forEach(p => {
-    rows.push([accountId, p.mappedTo!, p.holding.ticker, "Do Not Buy", "Default", ""])
+  processed.filter(p => p.action === "map" && p.matches.length > 0).forEach(p => {
+    p.matches.forEach(m => {
+      rows.push([accountId, m.ticker, p.holding.ticker, "Do Not Buy", "Default", ""])
+    })
   })
   downloadCSV(rows, `AccountEquivalent-${accountId || "export"}-${new Date().toISOString().slice(0,10)}.csv`)
 }
-
 function downloadCSV(rows: string[][], filename: string) {
   const csv = rows.map(r => r.map(c => `"${c}"`).join(",")).join("\n")
   const blob = new Blob([csv], { type: "text/csv" })
