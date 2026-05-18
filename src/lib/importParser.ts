@@ -265,7 +265,7 @@ export function processWithBudget(result: ImportResult, gainsBudget: number | nu
 
   // Net the losses against the budget — losses offset gains dollar for dollar
   const totalLosses = losses.reduce((sum, h) => sum + Math.abs(h.unrealizedGL), 0)
-  const effectiveBudget = gainsBudget != null ? gainsBudget + totalLosses : Infinity
+  const effectiveBudget = (gainsBudget ?? 0) + totalLosses
   let budgetUsed = 0
 
   gains.forEach(h => {
