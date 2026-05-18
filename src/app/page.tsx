@@ -381,9 +381,10 @@ export default function Home() {
                         {importResult.modelName}
                       </div>
                       <div style={{ fontSize: 11, color: "var(--ink-faint)" }}>
-                        Account {importResult.accountNumber} · {importResult.inModel.length} model holdings · {importResult.unassigned.length} unassigned
+                        {importResult.inModel.length} model holdings · {importResult.unassigned.length} unassigned
                       </div>
                     </div>
+                  )}
                   )}
                 </div>
               </div>
