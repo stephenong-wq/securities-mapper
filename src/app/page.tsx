@@ -441,10 +441,9 @@ export default function Home() {
             <div className="fade-up-2">
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, minHeight: 36 }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-                  <span style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink)" }}>
-                    {processed ? `${processed.length} Positions` : "Results"}
-                  </span>
-                  {importResult && <span style={{ fontSize: 12, color: "var(--ink-faint)" }}>→ {importResult.modelName}</span>}
+                <span style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink)" }}>
+                  {processed ? `${processed.length} Positions` : "Results"}
+                </span>
                 </div>
                 {processed && (
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
