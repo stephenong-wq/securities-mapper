@@ -79,7 +79,7 @@ export function mapSecurities(
   const universeForModel = modelUniverse.filter(r => r.modelId === modelId)
   const universeTickers = new Set(universeForModel.map(r => r.ticker.toUpperCase()))
 
-  const mapped = inputTickers.map(raw => {
+  const mapped: (MappedSecurity | null)[] = inputTickers.map(raw => {
     const ticker = raw.toUpperCase().trim()
     const inputMs = msMap.get(ticker)
 
