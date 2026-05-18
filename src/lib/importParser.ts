@@ -263,8 +263,10 @@ export function processWithBudget(result: ImportResult, gainsBudget: number | nu
 
   losses.forEach(h => processed.push({ holding: h, action: "sell-loss", matches: [] }))
 
+  // Net the losses against the budget — losses offset gains dollar for dollar
+  const totalLosses = losses.reduce((sum, h) => sum + Math.abs(h.unrealizedGL), 0)
+  const effectiveBudget = gainsBudget != null ? gainsBudget + totalLosses : Infinity
   let budgetUsed = 0
-  const effectiveBudget = gainsBudget ?? Infinity
 
   gains.forEach(h => {
     if (budgetUsed + h.unrealizedGL <= effectiveBudget) {
