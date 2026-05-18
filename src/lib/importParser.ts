@@ -31,12 +31,12 @@ export interface ProcessedHolding {
 
 // Infer a friendly model name from the Sec. Set labels present
 function inferModelName(secSets: string[]): string {
-  const unique = [...new Set(secSets.filter(s => s && s !== "Unassigned" && s !== "Cash"))]
+  const unique = Array.from(new Set(secSets.filter(s => s && s !== "Unassigned" && s !== "Cash")))
   if (!unique.length) return "Unknown Model"
 
   // Strip the asset class suffix (e.g. "CRSP - US Equity" → "CRSP")
   const prefixes = unique.map(s => s.split(" - ")[0].trim())
-  const uniquePrefixes = [...new Set(prefixes)]
+  const uniquePrefixes = Array.from(new Set(prefixes))
 
   if (uniquePrefixes.length === 1) return uniquePrefixes[0]
   return uniquePrefixes.join(" / ")
