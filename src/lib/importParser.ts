@@ -258,23 +258,15 @@ export function processWithBudget(result: ImportResult, gainsBudget: number | nu
   const { unassigned, inModel } = result
   const processed: ProcessedHolding[] = []
 
+  // Losses always sell — no mapping needed
   const losses = unassigned.filter(h => h.unrealizedGL <= 0)
-  const gains  = unassigned.filter(h => h.unrealizedGL > 0).sort((a, b) => a.unrealizedGL - b.unrealizedGL)
-
   losses.forEach(h => processed.push({ holding: h, action: "sell-loss", matches: [] }))
 
-  let budgetUsed = 0
-  const effectiveBudget = gainsBudget ?? Infinity
-
-  gains.forEach(h => {
-    if (budgetUsed + h.unrealizedGL <= effectiveBudget) {
-      budgetUsed += h.unrealizedGL
-      const sellGainMatches = findMatches(h, inModel)
-      processed.push({ holding: h, action: "sell-gain", matches: sellGainMatches, gainConsumed: h.unrealizedGL })
-    } else {
-      const matches = findMatches(h, inModel)
-      processed.push({ holding: h, action: "map", matches })
-    }
+  // Everything else always maps as equivalent — gains budget is informational only
+  const nonLosses = unassigned.filter(h => h.unrealizedGL > 0)
+  nonLosses.forEach(h => {
+    const matches = findMatches(h, inModel)
+    processed.push({ holding: h, action: "map", matches })
   })
 
   return processed
