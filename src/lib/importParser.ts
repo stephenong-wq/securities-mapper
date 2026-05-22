@@ -263,15 +263,14 @@ export function processWithBudget(result: ImportResult, gainsBudget: number | nu
 
   losses.forEach(h => processed.push({ holding: h, action: "sell-loss", matches: [] }))
 
-  // Net the losses against the budget — losses offset gains dollar for dollar
-  const totalLosses = losses.reduce((sum, h) => sum + Math.abs(h.unrealizedGL), 0)
-  const effectiveBudget = (gainsBudget ?? 0) + totalLosses
   let budgetUsed = 0
+  const effectiveBudget = gainsBudget ?? Infinity
 
   gains.forEach(h => {
     if (budgetUsed + h.unrealizedGL <= effectiveBudget) {
       budgetUsed += h.unrealizedGL
-      processed.push({ holding: h, action: "sell-gain", matches: [], gainConsumed: h.unrealizedGL })
+      const sellGainMatches = findMatches(h, inModel)
+      processed.push({ holding: h, action: "sell-gain", matches: sellGainMatches, gainConsumed: h.unrealizedGL })
     } else {
       const matches = findMatches(h, inModel)
       processed.push({ holding: h, action: "map", matches })
