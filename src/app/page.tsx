@@ -43,7 +43,7 @@ function exportManualCSV(results: MappedSecurity[], accountId: string) {
 // ─── Import CSV export ─────────────────────────────────────────────────────────
 function exportImportCSV(processed: ProcessedHolding[], accountId: string) {
   const rows = [["Account ID", "Targeted", "Equivalent", "Equivalent Buy Priority", "Equivalent Sell Priority", "Delete"]]
-  processed.filter(p => p.action === "map" && p.matches.length > 0).forEach(p => {
+  processed.filter(p => (p.action === "map" || p.action === "sell-gain") && p.matches.length > 0).forEach(p => {
     p.matches.forEach(m => {
       rows.push([accountId, m.ticker, p.holding.ticker, "Do Not Buy", "Default", ""])
     })
@@ -364,7 +364,7 @@ export default function Home() {
                         {importResult.modelName}
                       </div>
                       <div style={{ fontSize: 11, color: "var(--ink-faint)" }}>
-                        {importResult.unassigned.length} unassigned positions
+                        Account {importResult.accountNumber} · {importResult.inModel.length} model holdings · {importResult.unassigned.length} unassigned
                       </div>
                     </div>
                   )}
@@ -492,13 +492,18 @@ export default function Home() {
                             <div style={{ fontSize: 11, color: "var(--ink-faint)", marginTop: 2 }}>{p.holding.msCategory}</div>
                           </div>
                           <div>
-                            {isMap && p.matches.length > 0 ? (
+                            {(isMap || isGain) && p.matches.length > 0 ? (
                               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                   <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--accent)", textShadow: "0 0 12px rgba(0,200,255,0.3)" }}>
                                     {p.matches.map(m => m.ticker).join(" / ")}
                                   </span>
                                 </div>
+                                {isGain && (
+                                  <div style={{ fontSize: 11, color: "var(--ink-faint)", fontStyle: "italic" }}>
+                                    Sell — {fmt$(p.gainConsumed || 0)} gain · map equiv
+                                  </div>
+                                )}
                               </div>
                             ) : (
                               <span style={{ fontSize: 12, color: "var(--ink-faint)", fontStyle: "italic" }}>
