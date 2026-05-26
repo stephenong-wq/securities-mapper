@@ -86,6 +86,7 @@ export default function Home() {
   const [showImportExportModal, setShowImportExportModal] = useState(false)
   const [importExportAccountId, setImportExportAccountId] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
 
   useEffect(() => {
     fetch("/api/data")
@@ -106,7 +107,8 @@ export default function Home() {
     } finally { setManualLoading(false) }
   }, [tickerInput, selectedModel, msData, universeData])
 
-  const handleImport = useCallback(async (file: File) => {
+    const handleImport = useCallback(async (file: File) => {
+    setUploadedFile(file)
     setImportLoading(true); setImportError(null); setImportResult(null); setProcessed(null)
     try {
       const formData = new FormData()
