@@ -60,7 +60,7 @@ function downloadCSV(rows: string[][], filename: string) {
 
 // ─── Main component ────────────────────────────────────────────────────────────
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"manual" | "import">("manual")
+  const [activeTab, setActiveTab] = useState<"manual" | "import">("import")
 
   // Shared data
   const [msData, setMsData] = useState<MorningstarRow[]>([])
@@ -454,7 +454,7 @@ export default function Home() {
 
                       </div>
                     )}
-                    <button onClick={() => { setImportExportAccountId(importResult?.accountNumber || ""); setShowImportExportModal(true) }}
+                    <button onClick={() => { setImportExportAccountId(""); setShowImportExportModal(true) }}
                       style={{ padding: "3px 12px", background: "rgba(0,200,255,0.08)", color: "var(--accent)", border: "1px solid rgba(0,200,255,0.25)", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-mono)" }}>
                       Export
                     </button>
