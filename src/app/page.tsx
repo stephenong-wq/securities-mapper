@@ -142,8 +142,8 @@ export default function Home() {
   const importCounts = processed ? {
     mapped:    processed.filter(p => p.action === "map").length,
     sellLoss:  processed.filter(p => p.action === "sell-loss").length,
-    sellGain:  0,
-    totalGain: 0,
+    sellGain:  processed.filter(p => p.action === "sell-gain").length,
+    totalGain: processed.filter(p => p.action === "sell-gain").reduce((s, p) => s + (p.gainConsumed || 0), 0),
     totalLoss: processed.filter(p => p.action === "sell-loss").reduce((s, p) => s + p.holding.unrealizedGL, 0),
   } : null
 
@@ -438,6 +438,7 @@ export default function Home() {
                       <div style={{ display: "flex", gap: 6 }}>
                         {importCounts.mapped    > 0 && <Chip label={`${importCounts.mapped} mapped`}     color="#00f0c0" bg="#001e18" glow="#00f0c0" />}
                         {importCounts.sellLoss  > 0 && <Chip label={`${importCounts.sellLoss} losses`}   color="#ff4488" bg="#1e0018" glow="#ff4488" />}
+                        {importCounts.sellGain  > 0 && <Chip label={`${importCounts.sellGain} sell gains`} color="#ffaa00" bg="#1e0800" glow="#ffaa00" />}
 
                       </div>
                     )}
@@ -462,11 +463,11 @@ export default function Home() {
               {processed && !importLoading && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {/* Summary bar */}
-                  {importCounts && importCounts.sellLoss > 0 && (
+                  {importCounts && (importCounts.sellLoss > 0 || importCounts.sellGain > 0) && (
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 8 }}>
                       <SummaryCard label="Losses Harvested" value={fmt$(Math.abs(importCounts.totalLoss))} color="#ff4488" />
-                      <SummaryCard label="Gains Budget" value={gainsBudget ? fmt$(parseFloat(gainsBudget)) : "$0"} color="#00c8ff" />
-                      <SummaryCard label="Net Tax Impact" value={gainsBudget ? fmt$(Math.max(0, parseFloat(gainsBudget) + importCounts.totalLoss)) : fmt$(importCounts.totalLoss)} color="#00f0c0" />
+                      <SummaryCard label="Gains Realized" value={fmt$(importCounts.totalGain)} color="#ffaa00" />
+                      <SummaryCard label="Net Tax Impact" value={fmt$(importCounts.totalGain + importCounts.totalLoss)} color="#00f0c0" />
                     </div>
                   )}
 
@@ -504,14 +505,14 @@ export default function Home() {
                                   </span>
                                 </div>
                                 {isGain && (
-                                  <div style={{ fontSize: 11, color: "var(--ink-faint)", fontStyle: "italic" }}>
-                                    Sell — {fmt$(p.gainConsumed || 0)} gain · map equiv
+                                  <div style={{ fontSize: 11, color: "#ffaa00", fontStyle: "italic" }}>
+                                    Sell {fmt$(p.gainConsumed || 0)} gain · buy equiv
                                   </div>
                                 )}
                               </div>
                             ) : (
                               <span style={{ fontSize: 12, color: "var(--ink-faint)", fontStyle: "italic" }}>
-                                {isLoss ? "Sell to realize loss" : `Sell — ${fmt$(p.gainConsumed || 0)} gain`}
+                                {isLoss ? "Sell to realize loss" : "—"}
                               </span>
                             )}
                           </div>
