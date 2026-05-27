@@ -86,7 +86,7 @@ export default function Home() {
   const [importError, setImportError] = useState<string | null>(null)
   const [showImportExportModal, setShowImportExportModal] = useState(false)
   const [importExportAccountId, setImportExportAccountId] = useState("")
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
 
   useEffect(() => {
     fetch("/api/data")
