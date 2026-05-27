@@ -26,11 +26,17 @@ export interface ImportMatch {
   weight?: number  // for split maps, 0-1
 }
 
-export interface ImportResult {
+export interface AccountData {
+  accountId: string
   accountNumber: string
   modelName: string
   inModel: ImportHolding[]
   unassigned: ImportHolding[]
+}
+
+export interface ImportResult {
+  accounts: AccountData[]
+  modelName: string  // overall model name across all accounts
 }
 
 export interface ProcessedHolding {
@@ -241,7 +247,7 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
 
   const holdingRows = XLSX.utils.sheet_to_json<Record<string, string | number>>(holdingSheet, { defval: "" })
 
-  // Target values from Asset Classification sheet
+  // Target values from Asset Classification sheet (shared across accounts)
   const assetSheet = wb.Sheets["Asset Classification"]
   const targetMap = new Map<string, { targetValue: number; targetPct: number }>()
   if (assetSheet) {
@@ -255,34 +261,36 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
     })
   }
 
-  // Account number
-  const cashSheet = wb.Sheets["Account and Cash Details"]
-  let accountNumber = ""
-  if (cashSheet) {
-    const cashRows = XLSX.utils.sheet_to_json<Record<string, string | number>>(cashSheet, { defval: "" })
-    if (cashRows.length > 0) accountNumber = String(cashRows[0]["Account Number"] || "").trim()
-  }
-
-  const allSecSets: string[] = []
-  const inModel: ImportHolding[] = []
-  const unassigned: ImportHolding[] = []
+  // Group holdings by Account ID
+  const accountMap = new Map<string, {
+    accountNumber: string
+    secSets: string[]
+    inModel: ImportHolding[]
+    unassigned: ImportHolding[]
+  }>()
 
   holdingRows.forEach(row => {
     const ticker = String(row["Ticker"] || "").trim().toUpperCase()
     if (!ticker || ticker === "CUSTODIAL_CASH") return
 
-    const secSet      = String(row["Sec. Set"] || "").trim()
-    const msCategory  = String(row["Product Sub-Class"] || "").trim()
-    const productClass = String(row["Product Class"] || "").trim()
-    const currentValue = parseFloat(String(row["Current $"] || "0")) || 0
+    const accountId     = String(row["Account ID"] || "").trim()
+    const accountNumber = String(row["Account Number"] || "").trim()
+    const secSet        = String(row["Sec. Set"] || "").trim()
+    const msCategory    = String(row["Product Sub-Class"] || "").trim()
+    const productClass  = String(row["Product Class"] || "").trim()
+    const currentValue  = parseFloat(String(row["Current $"] || "0")) || 0
     const currentShares = parseFloat(String(row["Current Shares"] || "0")) || 0
-    const price        = parseFloat(String(row["Price"] || "0")) || 0
-    const unrealizedGL = parseFloat(String(row["Unrealized G/L $"] || "0")) || 0
+    const price         = parseFloat(String(row["Price"] || "0")) || 0
+    const unrealizedGL  = parseFloat(String(row["Unrealized G/L $"] || "0")) || 0
     const unrealizedGLPct = parseFloat(String(row["Unrealized G/L %"] || "0")) || 0
-    const name         = String(row["Security Name"] || ticker).trim()
-    const target       = targetMap.get(ticker) || { targetValue: 0, targetPct: 0 }
+    const name          = String(row["Security Name"] || ticker).trim()
+    const target        = targetMap.get(ticker) || { targetValue: 0, targetPct: 0 }
 
-    allSecSets.push(secSet)
+    if (!accountMap.has(accountId)) {
+      accountMap.set(accountId, { accountNumber, secSets: [], inModel: [], unassigned: [] })
+    }
+    const acct = accountMap.get(accountId)!
+    acct.secSets.push(secSet)
 
     const holding: ImportHolding = {
       ticker, name, secSet, msCategory, productClass,
@@ -292,16 +300,27 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
       targetPct: target.targetPct,
     }
 
-    if (secSet === "Unassigned") unassigned.push(holding)
-    else if (secSet !== "Cash") inModel.push(holding)
+    if (secSet === "Unassigned") acct.unassigned.push(holding)
+    else if (secSet !== "Cash") acct.inModel.push(holding)
   })
 
-  return { accountNumber, modelName: inferModelName(allSecSets), inModel, unassigned }
+  const allSecSets = Array.from(accountMap.values()).flatMap(a => a.secSets)
+  const overallModelName = inferModelName(allSecSets)
+
+  const accounts: AccountData[] = Array.from(accountMap.entries()).map(([accountId, data]) => ({
+    accountId,
+    accountNumber: data.accountNumber,
+    modelName: inferModelName(data.secSets),
+    inModel: data.inModel,
+    unassigned: data.unassigned,
+  }))
+
+  return { accounts, modelName: overallModelName }
 }
 
 // ─── Process with gains budget ────────────────────────────────────────────────
-export function processWithBudget(result: ImportResult, gainsBudget: number | null): ProcessedHolding[] {
-  const { unassigned, inModel } = result
+export function processWithBudget(account: AccountData, gainsBudget: number | null): ProcessedHolding[] {
+  const { unassigned, inModel } = account
   const processed: ProcessedHolding[] = []
 
   // Losses always sell first — no mapping needed
