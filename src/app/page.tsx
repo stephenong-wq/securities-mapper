@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import { MODELS } from "@/lib/types"
 import type { ModelId, MappedSecurity, MorningstarRow, ModelUniverseRow } from "@/lib/types"
-import type { ImportResult, ProcessedHolding } from "@/lib/importParser"
+import type { ImportResult, AccountData, ProcessedHolding } from "@/lib/importParser"
 
 // ─── Status config ─────────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
@@ -43,7 +43,7 @@ function exportManualCSV(results: MappedSecurity[], accountId: string) {
 // ─── Import CSV export ─────────────────────────────────────────────────────────
 function exportImportCSV(processed: ProcessedHolding[], accountId: string) {
   const rows = [["Account ID", "Targeted", "Equivalent", "Equivalent Buy Priority", "Equivalent Sell Priority", "Delete"]]
-  processed.filter(p => (p.action === "map" || p.action === "sell-gain") && p.matches.length > 0).forEach(p => {
+  processed.filter(p => p.action === "map" && p.matches.length > 0).forEach(p => {
     p.matches.forEach(m => {
       rows.push([accountId, m.ticker, p.holding.ticker, "Do Not Buy", "Default", ""])
     })
@@ -60,7 +60,7 @@ function downloadCSV(rows: string[][], filename: string) {
 
 // ─── Main component ────────────────────────────────────────────────────────────
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"manual" | "import">("import")
+  const [activeTab, setActiveTab] = useState<"manual" | "import">("manual")
 
   // Shared data
   const [msData, setMsData] = useState<MorningstarRow[]>([])
@@ -86,7 +86,6 @@ export default function Home() {
   const [showImportExportModal, setShowImportExportModal] = useState(false)
   const [importExportAccountId, setImportExportAccountId] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
 
   useEffect(() => {
     fetch("/api/data")
@@ -107,8 +106,7 @@ export default function Home() {
     } finally { setManualLoading(false) }
   }, [tickerInput, selectedModel, msData, universeData])
 
-    const handleImport = useCallback(async (file: File) => {
-    setUploadedFile(file)
+  const handleImport = useCallback(async (file: File) => {
     setImportLoading(true); setImportError(null); setImportResult(null); setProcessed(null)
     try {
       const formData = new FormData()
@@ -118,7 +116,8 @@ export default function Home() {
       const data = await res.json()
       if (data.error) throw new Error(data.error)
       setImportResult(data.importResult)
-      setProcessed(data.processed)
+      setProcessedAccounts(data.processedAccounts)
+      if (data.processedAccounts?.length > 0) setSelectedAccountId(data.processedAccounts[0].accountId)
     } catch (e) {
       setImportError(String(e))
     } finally { setImportLoading(false) }
@@ -130,23 +129,13 @@ export default function Home() {
   }
 
   const handleReprocess = useCallback(async () => {
-    if (!uploadedFile) return
-    setImportLoading(true); setImportError(null); setProcessed(null)
-    try {
-      const formData = new FormData()
-      formData.append("file", uploadedFile)
-      if (gainsBudget) formData.append("gainsBudget", gainsBudget)
-      const res = await fetch("/api/import", { method: "POST", body: formData })
-      const data = await res.json()
-      if (data.error) throw new Error(data.error)
-      setImportResult(data.importResult)
-      setProcessed(data.processed)
-    } catch (e) {
-      setImportError(String(e))
-    } finally { setImportLoading(false) }
-  }, [uploadedFile, gainsBudget])
+    if (!fileInputRef.current?.files?.[0]) return
+    handleImport(fileInputRef.current.files[0])
+  }, [handleImport])
 
   const selectedModelInfo = MODELS.find(m => m.id === selectedModel)!
+  const selectedAccount = processedAccounts?.find(a => a.accountId === selectedAccountId) || processedAccounts?.[0] || null
+  const processed = selectedAccount?.processed || null
   const manualStatusCounts = manualResults ? {
     mapped: manualResults.filter(r => r.status === "mapped").length,
     split:  manualResults.filter(r => r.status === "split").length,
@@ -362,10 +351,6 @@ export default function Home() {
                 <div style={{ padding: 14 }}>
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    onDragEnter={e => { e.preventDefault(); e.stopPropagation() }}
-                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); (e.currentTarget as HTMLDivElement).style.borderColor = "var(--accent)"; (e.currentTarget as HTMLDivElement).style.background = "rgba(0,200,255,0.06)" }}
-                    onDragLeave={e => { e.preventDefault(); e.stopPropagation(); (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border-strong)"; (e.currentTarget as HTMLDivElement).style.background = "var(--surface)" }}
-                    onDrop={e => { e.preventDefault(); e.stopPropagation(); (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border-strong)"; (e.currentTarget as HTMLDivElement).style.background = "var(--surface)"; const file = e.dataTransfer.files?.[0]; if (file) handleImport(file) }}
                     style={{ border: "1px dashed var(--border-strong)", borderRadius: 8, padding: "32px 20px", textAlign: "center", cursor: "pointer", transition: "all 0.15s", background: "var(--surface)" }}
                     onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--accent)"; (e.currentTarget as HTMLDivElement).style.background = "rgba(0,200,255,0.03)" }}
                     onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border-strong)"; (e.currentTarget as HTMLDivElement).style.background = "var(--surface)" }}
@@ -452,11 +437,10 @@ export default function Home() {
                       <div style={{ display: "flex", gap: 6 }}>
                         {importCounts.mapped    > 0 && <Chip label={`${importCounts.mapped} mapped`}     color="#00f0c0" bg="#001e18" glow="#00f0c0" />}
                         {importCounts.sellLoss  > 0 && <Chip label={`${importCounts.sellLoss} losses`}   color="#ff4488" bg="#1e0018" glow="#ff4488" />}
-                        {importCounts.sellGain  > 0 && <Chip label={`${importCounts.sellGain} sell gains`} color="#ffaa00" bg="#1e0800" glow="#ffaa00" />}
-
+                        {importCounts.sellGain  > 0 && <Chip label={`${importCounts.sellGain} gains`}    color="#ffaa00" bg="#1e0800" glow="#ffaa00" />}
                       </div>
                     )}
-                    <button onClick={() => { setImportExportAccountId(""); setShowImportExportModal(true) }}
+                    <button onClick={() => { setImportExportAccountId(importResult?.accountNumber || ""); setShowImportExportModal(true) }}
                       style={{ padding: "3px 12px", background: "rgba(0,200,255,0.08)", color: "var(--accent)", border: "1px solid rgba(0,200,255,0.25)", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-mono)" }}>
                       Export
                     </button>
@@ -477,11 +461,11 @@ export default function Home() {
               {processed && !importLoading && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {/* Summary bar */}
-                  {importCounts && (importCounts.sellLoss > 0 || importCounts.sellGain > 0) && (
+                  {importCounts && (gainsBudget || importCounts.sellLoss > 0 || importCounts.sellGain > 0) && (
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 8 }}>
-                      <SummaryCard label="Losses Harvested" value={fmt$(Math.abs(importCounts.totalLoss))} color="#ff4488" />
                       <SummaryCard label="Gains Realized" value={fmt$(importCounts.totalGain)} color="#ffaa00" />
-                      <SummaryCard label="Net Tax Impact" value={fmt$(importCounts.totalGain + importCounts.totalLoss)} color="#00f0c0" />
+                      <SummaryCard label="Losses Harvested" value={fmt$(Math.abs(importCounts.totalLoss))} color="#ff4488" />
+                      <SummaryCard label="Budget Remaining" value={gainsBudget ? fmt$(Math.max(0, parseFloat(gainsBudget) - importCounts.totalGain)) : "—"} color="#00c8ff" />
                     </div>
                   )}
 
@@ -511,29 +495,24 @@ export default function Home() {
                             <div style={{ fontSize: 11, color: "var(--ink-faint)", marginTop: 2 }}>{p.holding.msCategory}</div>
                           </div>
                           <div>
-                            {(isMap || isGain) && p.matches.length > 0 ? (
+                            {isMap && p.matches.length > 0 ? (
                               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                   <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--accent)", textShadow: "0 0 12px rgba(0,200,255,0.3)" }}>
                                     {p.matches.map(m => m.ticker).join(" / ")}
                                   </span>
                                 </div>
-                                {isGain && (
-                                  <div style={{ fontSize: 11, color: "#ffaa00", fontStyle: "italic" }}>
-                                    Sell {fmt$(p.gainConsumed || 0)} gain · buy equiv
-                                  </div>
-                                )}
                               </div>
                             ) : (
                               <span style={{ fontSize: 12, color: "var(--ink-faint)", fontStyle: "italic" }}>
-                                {isLoss ? "Sell to realize loss" : "—"}
+                                {isLoss ? "Sell to realize loss" : `Sell — ${fmt$(p.gainConsumed || 0)} gain`}
                               </span>
                             )}
                           </div>
                           <div style={{ textAlign: "right" }}>
                             <div style={{ fontSize: 13, color: "var(--ink)", fontFamily: "var(--font-mono)" }}>{fmt$(p.holding.currentValue)}</div>
                             <div style={{ fontSize: 11, marginTop: 2, color: p.holding.unrealizedGL < 0 ? "#ff4488" : p.holding.unrealizedGL > 0 ? "#00f0c0" : "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>
-                              {p.holding.unrealizedGL !== 0 ? `${fmt$(p.holding.unrealizedGL)} (${fmtPct(p.holding.unrealizedGLPct)})` : "—"}
+                              {p.holding.unrealizedGL !== 0 ? fmt$(p.holding.unrealizedGL) : "—"}
                             </div>
                           </div>
                           <div>
