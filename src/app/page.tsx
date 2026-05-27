@@ -41,18 +41,14 @@ function exportManualCSV(results: MappedSecurity[], accountId: string) {
 }
 
 // ─── Import CSV export ─────────────────────────────────────────────────────────
-function exportImportCSV(processedAccounts: { accountId: string; processed: ProcessedHolding[] }[]) {
+function exportImportCSV(processed: ProcessedHolding[], accountId: string) {
   const rows = [["Account ID", "Targeted", "Equivalent", "Equivalent Buy Priority", "Equivalent Sell Priority", "Delete"]]
-  processedAccounts.forEach(({ accountId, processed }) => {
-    processed.filter(p => (p.action === "map" || p.action === "sell-gain") && p.matches.length > 0).forEach(p => {
-      p.matches.forEach(m => {
-        rows.push([accountId, m.ticker, p.holding.ticker, "Do Not Buy", "Default", ""])
-      })
+  processed.filter(p => p.action === "map" && p.matches.length > 0).forEach(p => {
+    p.matches.forEach(m => {
+      rows.push([accountId, m.ticker, p.holding.ticker, "Do Not Buy", "Default", ""])
     })
   })
-  const date = new Date().toISOString().slice(0,10)
-  const ids = processedAccounts.map(a => a.accountId).join("-")
-  downloadCSV(rows, `AccountEquivalent-${ids}-${date}.csv`)
+  downloadCSV(rows, `AccountEquivalent-${accountId || "export"}-${new Date().toISOString().slice(0,10)}.csv`)
 }
 function downloadCSV(rows: string[][], filename: string) {
   const csv = rows.map(r => r.map(c => `"${c}"`).join(",")).join("\n")
@@ -88,6 +84,8 @@ export default function Home() {
   const [gainsBudget, setGainsBudget] = useState("")
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
+  const [showImportExportModal, setShowImportExportModal] = useState(false)
+  const [importExportAccountId, setImportExportAccountId] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
 
@@ -111,7 +109,6 @@ export default function Home() {
   }, [tickerInput, selectedModel, msData, universeData])
 
   const handleImport = useCallback(async (file: File) => {
-    setUploadedFile(file)
     setImportLoading(true); setImportError(null); setImportResult(null); setProcessedAccounts(null)
     try {
       const formData = new FormData()
@@ -175,6 +172,15 @@ export default function Home() {
         <Modal title="Export AccountEquivalent" onClose={() => setShowExportModal(false)}>
           <AccountIdInput value={exportAccountId} onChange={setExportAccountId}
             onConfirm={() => { if (manualResults) { exportManualCSV(manualResults, exportAccountId); setShowExportModal(false) } }}
+          />
+        </Modal>
+      )}
+
+      {/* Import Export Modal */}
+      {showImportExportModal && (
+        <Modal title="Export AccountEquivalent" onClose={() => setShowImportExportModal(false)}>
+          <AccountIdInput value={importExportAccountId} onChange={setImportExportAccountId}
+            onConfirm={() => { if (processed) { exportImportCSV(processed, importExportAccountId); setShowImportExportModal(false) } }}
           />
         </Modal>
       )}
@@ -369,24 +375,14 @@ export default function Home() {
                   </div>
                   <input ref={fileInputRef} type="file" accept=".xlsx" onChange={handleFileChange} style={{ display: "none" }} />
 
-                  {importResult && processedAccounts && (
+                  {importResult && (
                     <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(0,200,255,0.06)", borderRadius: 8, border: "1px solid rgba(0,200,255,0.15)" }}>
                       <div style={{ fontSize: 12, color: "var(--accent)", fontWeight: 700, marginBottom: 4 }}>
                         {importResult.modelName}
                       </div>
-                      <div style={{ fontSize: 11, color: "var(--ink-faint)", marginBottom: processedAccounts.length > 1 ? 10 : 0 }}>
-                        {processedAccounts.length} account{processedAccounts.length > 1 ? "s" : ""} · {processedAccounts.reduce((s, a) => s + a.processed.filter(p => p.action !== "sell-loss").length, 0)} mappings
+                      <div style={{ fontSize: 11, color: "var(--ink-faint)" }}>
+                        Account {importResult.accountNumber} · {importResult.inModel.length} model holdings · {importResult.unassigned.length} unassigned
                       </div>
-                      {processedAccounts.length > 1 && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>
-                          {processedAccounts.map(a => (
-                            <button key={a.accountId} onClick={() => setSelectedAccountId(a.accountId)}
-                              style={{ textAlign: "left", padding: "6px 10px", borderRadius: 6, border: selectedAccountId === a.accountId ? "1px solid rgba(0,200,255,0.4)" : "1px solid transparent", background: selectedAccountId === a.accountId ? "rgba(0,200,255,0.1)" : "transparent", cursor: "pointer", fontSize: 12, color: selectedAccountId === a.accountId ? "var(--accent)" : "var(--ink-muted)" }}>
-                              ID {a.accountId} · {a.accountNumber}
-                            </button>
-                          ))}
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
@@ -458,9 +454,9 @@ export default function Home() {
                         {importCounts.sellGain  > 0 && <Chip label={`${importCounts.sellGain} gains`}    color="#ffaa00" bg="#1e0800" glow="#ffaa00" />}
                       </div>
                     )}
-                    <button onClick={() => processedAccounts && exportImportCSV(processedAccounts)}
+                    <button onClick={() => { setImportExportAccountId(importResult?.accountNumber || ""); setShowImportExportModal(true) }}
                       style={{ padding: "3px 12px", background: "rgba(0,200,255,0.08)", color: "var(--accent)", border: "1px solid rgba(0,200,255,0.25)", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-mono)" }}>
-                      Export All
+                      Export
                     </button>
                   </div>
                 )}
