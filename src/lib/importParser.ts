@@ -97,13 +97,31 @@ function fingerprintOverlap(a: string[], b: string[]): number {
 function broadClass(category: string, productClass: string): string {
   const cat = (category + " " + productClass).toLowerCase()
   if (cat.includes("emerging")) return "emerging"
-  if (cat.includes("international") || cat.includes("foreign") || cat.includes("eafe") || cat.includes("europe") || cat.includes("global equity")) return "intl-developed"
+  if (isGlobal(category, productClass)) return "global"
+  if (cat.includes("international") || cat.includes("foreign") || cat.includes("eafe") || cat.includes("europe")) return "intl-developed"
   if (cat.includes("bond") || cat.includes("fixed") || cat.includes("muni") || cat.includes("treasury") || cat.includes("securitized")) return "fixed-income"
   if (cat.includes("real estate") || cat.includes("reit")) return "real-estate"
   if (cat.includes("commodity") || cat.includes("gold")) return "commodity"
   if (cat.includes("small")) return "us-small"
   if (cat.includes("mid")) return "us-mid"
   return "us-equity"
+}
+
+// Detect global funds — those with exposure across US + Intl + EM
+function isGlobal(category: string, productClass: string): boolean {
+  const cat = (category + " " + productClass).toLowerCase()
+  return (
+    cat.includes("global large") ||
+    cat.includes("global stock") ||
+    cat.includes("global equity") ||
+    cat.includes("global blend") ||
+    cat.includes("global growth") ||
+    cat.includes("global value") ||
+    cat.includes("world large") ||
+    cat.includes("world stock") ||
+    cat.includes("world equity") ||
+    (cat.includes("global") && (cat.includes("equity") || cat.includes("stock") || cat.includes("large") || cat.includes("blend")))
+  )
 }
 
 // ─── Score a model holding as a match for an unassigned holding ───────────────
@@ -139,7 +157,37 @@ function findMatches(holding: ImportHolding, inModel: ImportHolding[]): ImportMa
   const maxUnderweight = Math.max(...inModel.map(m => Math.max(0, m.targetValue - m.currentValue)))
   const holdingBroadClass = broadClass(holding.msCategory, holding.productClass)
 
-  // Score all candidates
+  // ── Global fund: map to US + EAFE + EM candidates ─────────────────────────
+  if (holdingBroadClass === "global") {
+    const globalScored = inModel.map(candidate => ({
+      candidate,
+      score: scoreCandidate(holding, candidate, maxUnderweight),
+      underweightValue: Math.max(0, candidate.targetValue - candidate.currentValue),
+      broadClass: broadClass(candidate.msCategory, candidate.productClass),
+    }))
+
+    // Find best candidate per geographic bucket
+    const usMatch    = globalScored.filter(s => s.broadClass === "us-equity" || s.broadClass === "us-small" || s.broadClass === "us-mid").sort((a,b) => b.score - a.score)[0]
+    const eafeMatch  = globalScored.filter(s => s.broadClass === "intl-developed").sort((a,b) => b.score - a.score)[0]
+    const emMatch    = globalScored.filter(s => s.broadClass === "emerging").sort((a,b) => b.score - a.score)[0]
+
+    const globalMatches = [usMatch, eafeMatch, emMatch].filter(Boolean)
+    if (globalMatches.length > 0) {
+      const totalUnderweight = globalMatches.reduce((s, m) => s + m!.underweightValue, 0)
+      return globalMatches.map(m => ({
+        ticker: m!.candidate.ticker,
+        name: m!.candidate.name,
+        msCategory: m!.candidate.msCategory,
+        targetValue: m!.candidate.targetValue,
+        currentValue: m!.candidate.currentValue,
+        underweightValue: m!.underweightValue,
+        score: m!.score,
+        weight: totalUnderweight > 0 ? m!.underweightValue / totalUnderweight : 1 / globalMatches.length,
+      }))
+    }
+  }
+
+  // ── Standard matching ──────────────────────────────────────────────────────
   const scored = inModel.map(candidate => ({
     candidate,
     score: scoreCandidate(holding, candidate, maxUnderweight),
@@ -154,13 +202,11 @@ function findMatches(holding: ImportHolding, inModel: ImportHolding[]): ImportMa
   const second = scored[1]
   const shouldSplit =
     second &&
-    second.score >= top.score * 0.7 &&      // within 70% of top score
-    second.broadClass !== top.broadClass &&   // different asset class
-    holdingBroadClass !== top.broadClass      // holding spans multiple classes
+    second.score >= top.score * 0.7 &&
+    second.broadClass !== top.broadClass &&
+    holdingBroadClass !== top.broadClass
 
   const toMatch = shouldSplit ? [top, second] : [top]
-
-  // Calculate weights for split (proportional to allocation need)
   const totalUnderweight = toMatch.reduce((s, m) => s + m.underweightValue, 0)
 
   return toMatch.map(m => ({
