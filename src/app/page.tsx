@@ -88,6 +88,7 @@ export default function Home() {
   const [gainsBudget, setGainsBudget] = useState("")
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
 
   useEffect(() => {
