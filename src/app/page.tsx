@@ -79,7 +79,6 @@ export default function Home() {
 
   // Import tab
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
-  const [processed, setProcessed] = useState<ProcessedHolding[] | null>(null)
   const [gainsBudget, setGainsBudget] = useState("")
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
@@ -129,9 +128,21 @@ export default function Home() {
   }
 
   const handleReprocess = useCallback(async () => {
-    if (!fileInputRef.current?.files?.[0]) return
-    handleImport(fileInputRef.current.files[0])
-  }, [handleImport])
+    if (!uploadedFile) return
+    setImportLoading(true); setImportError(null); setProcessedAccounts(null)
+    try {
+      const formData = new FormData()
+      formData.append("file", uploadedFile)
+      if (gainsBudget) formData.append("gainsBudget", gainsBudget)
+      const res = await fetch("/api/import", { method: "POST", body: formData })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setProcessedAccounts(data.processedAccounts)
+      if (data.processedAccounts?.length > 0) setSelectedAccountId(data.processedAccounts[0].accountId)
+    } catch (e) {
+      setImportError(String(e))
+    } finally { setImportLoading(false) }
+  }, [uploadedFile, gainsBudget])
 
   const selectedModelInfo = MODELS.find(m => m.id === selectedModel)!
   const selectedAccount = processedAccounts?.find(a => a.accountId === selectedAccountId) || processedAccounts?.[0] || null
