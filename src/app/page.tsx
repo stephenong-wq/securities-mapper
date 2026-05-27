@@ -182,13 +182,6 @@ export default function Home() {
 
       {/* Import Export Modal */}
       {showImportExportModal && (
-        <Modal title="Export AccountEquivalent" onClose={() => setShowImportExportModal(false)}>
-          <AccountIdInput value={importExportAccountId} onChange={setImportExportAccountId}
-            onConfirm={() => { if (processed) { exportImportCSV(processed, importExportAccountId); setShowImportExportModal(false) } }}
-          />
-        </Modal>
-      )}
-
       {/* Header */}
       <header style={{ borderBottom: "1px solid var(--border)", background: "rgba(8,15,24,0.95)", backdropFilter: "blur(12px)", padding: "0 40px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64, position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
