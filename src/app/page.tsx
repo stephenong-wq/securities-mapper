@@ -533,7 +533,7 @@ export default function Home() {
                           <div style={{ textAlign: "right" }}>
                             <div style={{ fontSize: 13, color: "var(--ink)", fontFamily: "var(--font-mono)" }}>{fmt$(p.holding.currentValue)}</div>
                             <div style={{ fontSize: 11, marginTop: 2, color: p.holding.unrealizedGL < 0 ? "#ff4488" : p.holding.unrealizedGL > 0 ? "#00f0c0" : "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>
-                              {p.holding.unrealizedGL !== 0 ? fmt$(p.holding.unrealizedGL) : "—"}
+                              {p.holding.unrealizedGL !== 0 ? `${fmt$(p.holding.unrealizedGL)} (${fmtPct(p.holding.unrealizedGLPct)})` : "—"}
                             </div>
                           </div>
                           <div>
