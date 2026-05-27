@@ -41,7 +41,19 @@ function exportManualCSV(results: MappedSecurity[], accountId: string) {
 }
 
 // ─── Import CSV export ─────────────────────────────────────────────────────────
-function exportImportCSV(processed: ProcessedHolding[], accountId: string) {
+function exportImportCSV(processedAccounts: { accountId: string; processed: ProcessedHolding[] }[]) {
+  const rows = [["Account ID", "Targeted", "Equivalent", "Equivalent Buy Priority", "Equivalent Sell Priority", "Delete"]]
+  processedAccounts.forEach(({ accountId, processed }) => {
+    processed.filter(p => (p.action === "map" || p.action === "sell-gain") && p.matches.length > 0).forEach(p => {
+      p.matches.forEach(m => {
+        rows.push([accountId, m.ticker, p.holding.ticker, "Do Not Buy", "Default", ""])
+      })
+    })
+  })
+  const date = new Date().toISOString().slice(0,10)
+  const ids = processedAccounts.map(a => a.accountId).join("-")
+  downloadCSV(rows, `AccountEquivalent-${ids}-${date}.csv`)
+}
   const rows = [["Account ID", "Targeted", "Equivalent", "Equivalent Buy Priority", "Equivalent Sell Priority", "Delete"]]
   processed.filter(p => p.action === "map" && p.matches.length > 0).forEach(p => {
     p.matches.forEach(m => {
