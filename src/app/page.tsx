@@ -381,7 +381,7 @@ export default function Home() {
                         {importResult.modelName}
                       </div>
                       <div style={{ fontSize: 11, color: "var(--ink-faint)" }}>
-                        Account {importResult.accountNumber} · {importResult.inModel.length} model holdings · {importResult.unassigned.length} unassigned
+                        {processedAccounts?.length ?? 0} account{(processedAccounts?.length ?? 0) > 1 ? "s" : ""} · {processedAccounts?.reduce((s, a) => s + a.processed.filter(p => p.action !== "sell-loss").length, 0) ?? 0} mappings
                       </div>
                     </div>
                   )}
