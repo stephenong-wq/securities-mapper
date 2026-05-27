@@ -54,12 +54,6 @@ function exportImportCSV(processedAccounts: { accountId: string; processed: Proc
   const ids = processedAccounts.map(a => a.accountId).join("-")
   downloadCSV(rows, `AccountEquivalent-${ids}-${date}.csv`)
 }
-  const rows = [["Account ID", "Targeted", "Equivalent", "Equivalent Buy Priority", "Equivalent Sell Priority", "Delete"]]
-  processed.filter(p => p.action === "map" && p.matches.length > 0).forEach(p => {
-    p.matches.forEach(m => {
-      rows.push([accountId, m.ticker, p.holding.ticker, "Do Not Buy", "Default", ""])
-    })
-  })
 function downloadCSV(rows: string[][], filename: string) {
   const csv = rows.map(r => r.map(c => `"${c}"`).join(",")).join("\n")
   const blob = new Blob([csv], { type: "text/csv" })
