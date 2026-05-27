@@ -454,9 +454,9 @@ export default function Home() {
                         {importCounts.sellGain  > 0 && <Chip label={`${importCounts.sellGain} gains`}    color="#ffaa00" bg="#1e0800" glow="#ffaa00" />}
                       </div>
                     )}
-                    <button onClick={() => { setImportExportAccountId(importResult?.accountNumber || ""); setShowImportExportModal(true) }}
+                    <button onClick={() => processedAccounts && exportImportCSV(processedAccounts)}
                       style={{ padding: "3px 12px", background: "rgba(0,200,255,0.08)", color: "var(--accent)", border: "1px solid rgba(0,200,255,0.25)", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-mono)" }}>
-                      Export
+                      Export All
                     </button>
                   </div>
                 )}
