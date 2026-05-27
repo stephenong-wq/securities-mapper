@@ -60,8 +60,6 @@ function exportImportCSV(processedAccounts: { accountId: string; processed: Proc
       rows.push([accountId, m.ticker, p.holding.ticker, "Do Not Buy", "Default", ""])
     })
   })
-  downloadCSV(rows, `AccountEquivalent-${accountId || "export"}-${new Date().toISOString().slice(0,10)}.csv`)
-}
 function downloadCSV(rows: string[][], filename: string) {
   const csv = rows.map(r => r.map(c => `"${c}"`).join(",")).join("\n")
   const blob = new Blob([csv], { type: "text/csv" })
