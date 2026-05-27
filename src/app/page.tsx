@@ -79,6 +79,8 @@ export default function Home() {
 
   // Import tab
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
+  const [processedAccounts, setProcessedAccounts] = useState<{ accountId: string; accountNumber: string; modelName: string; processed: ProcessedHolding[] }[] | null>(null)
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
   const [gainsBudget, setGainsBudget] = useState("")
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
