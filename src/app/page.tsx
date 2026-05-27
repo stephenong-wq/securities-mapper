@@ -106,7 +106,7 @@ export default function Home() {
   }, [tickerInput, selectedModel, msData, universeData])
 
   const handleImport = useCallback(async (file: File) => {
-    setImportLoading(true); setImportError(null); setImportResult(null); setProcessed(null)
+    setImportLoading(true); setImportError(null); setImportResult(null); setProcessedAccounts(null)
     try {
       const formData = new FormData()
       formData.append("file", file)
