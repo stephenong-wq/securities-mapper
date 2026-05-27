@@ -13,7 +13,6 @@ export async function POST(req: NextRequest) {
     const buffer = await file.arrayBuffer()
     const importResult = parseImportExcel(buffer)
 
-    // Process each account separately
     const processedAccounts = importResult.accounts.map(account => ({
       accountId: account.accountId,
       accountNumber: account.accountNumber,
