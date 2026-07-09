@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { MODELS } from "@/lib/types"
 import type { ModelId, MappedSecurity, MorningstarRow, ModelUniverseRow } from "@/lib/types"
 import type { ImportResult, AccountData, ProcessedHolding } from "@/lib/importParser"
+import type { TransitionSummary, TradeRow } from "@/lib/transitionEngine"
 
 // ─── Status config ─────────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
@@ -62,6 +63,144 @@ function downloadCSV(rows: string[][], filename: string) {
   a.href = url; a.download = filename; a.click()
 }
 
+// ─── PDF Export ───────────────────────────────────────────────────────────────
+function exportTransitionPDF(transition: import("@/lib/transitionEngine").TransitionSummary, trades: import("@/lib/transitionEngine").TradeRow[], clientName: string) {
+  const sells = trades.filter(t => t.tradeType === "sell").sort((a,b) => a.tradeAmount - b.tradeAmount).slice(0,10)
+  const buys  = trades.filter(t => t.tradeType === "buy").sort((a,b) => b.tradeAmount - a.tradeAmount).slice(0,10)
+
+  const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })
+  const fmtPct = (n: number) => `${(n*100).toFixed(1)}%`
+  const fmtGL = (n: number) => n === 0 ? "$0.00" : n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 })
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Georgia', serif; font-size: 11px; color: #2a2a2a; background: #fff; padding: 48px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; padding-bottom: 20px; border-bottom: 2px solid #c8b89a; }
+  .logo { font-size: 28px; font-weight: 700; color: #2a2a2a; font-family: sans-serif; }
+  .title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .subtitle { font-size: 12px; color: #666; }
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+  .metric { border: 1px solid #ddd; padding: 14px 16px; border-radius: 4px; }
+  .metric-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-bottom: 8px; font-family: sans-serif; }
+  .metric-value { font-size: 20px; font-weight: 700; }
+  .metric-value.red { color: #c0392b; }
+  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #888; margin-bottom: 12px; font-family: sans-serif; border-bottom: 2px solid #c8b89a; padding-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 28px; }
+  th { background: #3d3427; color: #fff; padding: 8px 10px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; font-family: sans-serif; }
+  td { padding: 7px 10px; border-bottom: 1px solid #eee; font-size: 11px; }
+  tr:nth-child(even) td { background: #f9f7f4; }
+  .right { text-align: right; }
+  .red { color: #c0392b; font-weight: 600; }
+  .green { color: #1a7a4a; font-weight: 600; }
+  .tax-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 28px; }
+  .tax-box { border: 1px solid #ddd; padding: 16px; }
+  .tax-box-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; background: #3d3427; color: #fff; padding: 6px 10px; margin: -16px -16px 12px; font-family: sans-serif; }
+  .tax-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #f0ece6; font-size: 11px; }
+  .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #ddd; font-size: 9px; color: #999; font-family: sans-serif; }
+  .page2 { page-break-before: always; padding-top: 48px; }
+</style>
+</head>
+<body>
+
+<!-- PAGE 1 -->
+<div class="header">
+  <div>
+    <div class="title">Portfolio Transition Analysis</div>
+    <div class="subtitle">Client: ${clientName || transition.clientName}</div>
+    <div class="subtitle">Prepared by Savvy Advisors · ${transition.date}</div>
+    <div class="subtitle" style="margin-top:6px">Target Model: ${transition.modelName}</div>
+  </div>
+  <div class="logo">Savvy</div>
+</div>
+
+<div class="metrics">
+  <div class="metric"><div class="metric-label">Total Value</div><div class="metric-value">${fmt(transition.totalValue)}</div></div>
+  <div class="metric"><div class="metric-label">Transition G/L</div><div class="metric-value ${transition.totalTradeGL < 0 ? 'red' : ''}">${fmtGL(transition.totalTradeGL)}</div></div>
+  <div class="metric"><div class="metric-label">Estimated Tax</div><div class="metric-value red">${fmtGL(transition.estimatedTax)}</div></div>
+  <div class="metric"><div class="metric-label">Tax Impact</div><div class="metric-value red">${(transition.taxImpactPct * 100).toFixed(2)}%</div></div>
+</div>
+
+<div class="section-title">Asset Allocation</div>
+<table>
+  <tr><th>Asset Class</th><th class="right">Current %</th><th class="right">Target %</th><th class="right">Post-Trade %</th><th class="right">Trade Amount</th></tr>
+  ${transition.assetAllocation.map(row => `
+  <tr>
+    <td>${row.assetClass}</td>
+    <td class="right">${fmtPct(row.currentPct)}</td>
+    <td class="right">${fmtPct(row.targetPct)}</td>
+    <td class="right" style="font-weight:700;color:#1a5c8a">${fmtPct(row.postTradePct)}</td>
+    <td class="right ${row.tradeAmount < 0 ? 'red' : 'green'}">${row.tradeAmount >= 0 ? '+' : ''}${fmt(row.tradeAmount)}</td>
+  </tr>`).join("")}
+</table>
+
+<div class="tax-grid">
+  <div class="tax-box">
+    <div class="tax-box-title">Pre-Transition</div>
+    <div class="tax-row"><span>Unrealized G/L</span><span>${fmtGL(transition.ltGains + transition.stGains + transition.losses)}</span></div>
+    <div class="tax-row"><span>Gains</span><span>${fmtGL(transition.ltGains + transition.stGains)}</span></div>
+    <div class="tax-row"><span>Losses</span><span class="red">${fmtGL(transition.losses)}</span></div>
+  </div>
+  <div class="tax-box">
+    <div class="tax-box-title">Post-Transition</div>
+    <div class="tax-row" style="font-weight:600"><span>Realized Gains</span><span></span></div>
+    <div class="tax-row"><span>&nbsp;&nbsp;Long Term</span><span>${fmtGL(transition.ltGains)}</span></div>
+    <div class="tax-row"><span>&nbsp;&nbsp;Short Term</span><span>${fmtGL(transition.stGains)}</span></div>
+    <div class="tax-row"><span>Net Realized G/L</span><span>${fmtGL(transition.totalTradeGL)}</span></div>
+    <div class="tax-row"><span>YTD Gain (Post-Trade)</span><span>${fmtGL(transition.totalTradeGL)}</span></div>
+    <div class="tax-row"><span>Estimated Tax</span><span class="red">${fmtGL(transition.estimatedTax)}</span></div>
+    <div class="tax-row"><span># of Trades</span><span>${transition.numTrades}</span></div>
+  </div>
+</div>
+
+<div class="footer">This analysis is for internal advisory use only. Tax estimates are approximate and do not constitute tax advice.</div>
+
+<!-- PAGE 2 -->
+<div class="page2">
+<div class="header">
+  <div>
+    <div class="title">Detailed Trade Analysis</div>
+    <div class="subtitle">Client: ${clientName || transition.clientName}</div>
+    <div class="subtitle">Prepared by Savvy Advisors · ${transition.date}</div>
+  </div>
+  <div class="logo">Savvy</div>
+</div>
+
+<div class="section-title">Accounts</div>
+<table>
+  <tr><th>Account</th><th>Reg Type</th><th class="right">Account Value</th></tr>
+  ${transition.accounts.map(a => `<tr><td>${a.accountNumber || a.accountId}</td><td>${a.regType || "—"}</td><td class="right">${fmt(a.value)}</td></tr>`).join("")}
+</table>
+
+<div class="section-title">Top 10 Buys</div>
+<table>
+  <tr><th>Account</th><th>Ticker</th><th>Security Name</th><th class="right">Trade $</th></tr>
+  ${buys.map(t => `<tr><td>${t.accountNumber || t.accountId}</td><td>${t.ticker}</td><td>${t.securityName}</td><td class="right green">+${fmt(t.tradeAmount)}</td></tr>`).join("")}
+</table>
+
+<div class="section-title">Top 10 Sells</div>
+<table>
+  <tr><th>Account</th><th>Ticker</th><th>Security Name</th><th class="right">Trade $</th><th class="right">G/L $</th></tr>
+  ${sells.map(t => `<tr><td>${t.accountNumber || t.accountId}</td><td>${t.ticker}</td><td>${t.securityName}</td><td class="right red">${fmt(t.tradeAmount)}</td><td class="${t.realizedGL < 0 ? 'red' : t.realizedGL > 0 ? 'green' : ''} right">${t.realizedGL !== 0 ? fmtGL(t.realizedGL) : "$0.00"}</td></tr>`).join("")}
+</table>
+
+<div class="footer">This analysis is for internal advisory use only. Tax estimates are approximate and do not constitute tax advice.</div>
+</div>
+
+</body></html>`
+
+  const blob = new Blob([html], { type: "text/html" })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = `Transition-Analysis-${(clientName || "Client").replace(/\s+/g,"-")}-${new Date().toISOString().slice(0,10)}.html`
+  a.click()
+  setTimeout(() => window.open(url, "_blank"), 100)
+}
+
 // ─── Main component ────────────────────────────────────────────────────────────
 export default function Home() {
   const [activeTab, setActiveTab] = useState<"manual" | "import">("manual")
@@ -88,8 +227,20 @@ export default function Home() {
   const [gainsBudget, setGainsBudget] = useState("")
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
+  const [showImportExportModal, setShowImportExportModal] = useState(false)
+  const [importExportAccountId, setImportExportAccountId] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+
+  // Transition tab
+  const [transition, setTransition] = useState<TransitionSummary | null>(null)
+  const [transitionLoading, setTransitionLoading] = useState(false)
+  const [transitionError, setTransitionError] = useState<string | null>(null)
+  const [clientName, setClientName] = useState("")
+  const [transitionBudget, setTransitionBudget] = useState("")
+  const [editedTrades, setEditedTrades] = useState<TradeRow[]>([])
+  const transitionFileRef = useRef<HTMLInputElement>(null)
+  const [transitionFile, setTransitionFile] = useState<File | null>(null)
 
   useEffect(() => {
     fetch("/api/data")
@@ -149,6 +300,53 @@ export default function Home() {
     } finally { setImportLoading(false) }
   }, [uploadedFile, gainsBudget])
 
+  const handleTransitionImport = async (file: File) => {
+    setTransitionFile(file)
+    setTransitionLoading(true); setTransitionError(null); setTransition(null)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      if (transitionBudget) formData.append("gainsBudget", transitionBudget)
+      if (clientName) formData.append("clientName", clientName)
+      const res = await fetch("/api/transition", { method: "POST", body: formData })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setTransition(data.transition)
+      setEditedTrades(data.transition.trades)
+    } catch (e) { setTransitionError(String(e)) }
+    finally { setTransitionLoading(false) }
+  }
+
+  const handleTransitionReprocess = async () => {
+    if (!transitionFile) return
+    setTransitionLoading(true); setTransitionError(null)
+    try {
+      const formData = new FormData()
+      formData.append("file", transitionFile)
+      if (transitionBudget) formData.append("gainsBudget", transitionBudget)
+      if (clientName) formData.append("clientName", clientName)
+      const res = await fetch("/api/transition", { method: "POST", body: formData })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setTransition(data.transition)
+      setEditedTrades(data.transition.trades)
+    } catch (e) { setTransitionError(String(e)) }
+    finally { setTransitionLoading(false) }
+  }
+
+  const updateTrade = (id: string, field: keyof TradeRow, value: string | number | boolean) => {
+    setEditedTrades(prev => prev.map(t => {
+      if (t.id !== id) return t
+      const updated = { ...t, [field]: value, userOverride: true }
+      // Recalc tax if realizedGL changed
+      if (field === "realizedGL") {
+        const gl = Number(value)
+        updated.estimatedTax = gl > 0 ? gl * (updated.isLongTerm ? 0.20 : 0.37) : 0
+      }
+      return updated
+    }))
+  }
+
   const selectedModelInfo = MODELS.find(m => m.id === selectedModel)!
   const selectedAccount = processedAccounts?.find(a => a.accountId === selectedAccountId) || processedAccounts?.[0] || null
   const processed = selectedAccount?.processed || null
@@ -186,7 +384,7 @@ export default function Home() {
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           {/* Tab switcher */}
           <div style={{ display: "flex", background: "var(--surface-sunken)", borderRadius: 8, padding: 3, border: "1px solid var(--border)" }}>
-            {(["manual", "import"] as const).map(tab => (
+            {(["manual", "import", "transition"] as const).map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)} style={{
                 padding: "5px 16px", borderRadius: 6, border: "none", cursor: "pointer",
                 background: activeTab === tab ? "var(--accent)" : "transparent",
@@ -194,7 +392,7 @@ export default function Home() {
                 fontSize: 12, fontWeight: 700, fontFamily: "var(--font-mono)",
                 textTransform: "uppercase", letterSpacing: "0.06em", transition: "all 0.15s",
               }}>
-                {tab === "manual" ? "Manual" : "Import"}
+                {tab === "manual" ? "Manual" : tab === "import" ? "Security Mapper" : "Transition Analysis"}
               </button>
             ))}
           </div>
@@ -357,10 +555,6 @@ export default function Home() {
                 <div style={{ padding: 14 }}>
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    onDragEnter={e => { e.preventDefault(); e.stopPropagation() }}
-                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); (e.currentTarget as HTMLDivElement).style.borderColor = "var(--accent)"; (e.currentTarget as HTMLDivElement).style.background = "rgba(0,200,255,0.06)" }}
-                    onDragLeave={e => { e.preventDefault(); e.stopPropagation(); (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border-strong)"; (e.currentTarget as HTMLDivElement).style.background = "var(--surface)" }}
-                    onDrop={e => { e.preventDefault(); e.stopPropagation(); (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border-strong)"; (e.currentTarget as HTMLDivElement).style.background = "var(--surface)"; const file = e.dataTransfer.files?.[0]; if (file) handleImport(file) }}
                     style={{ border: "1px dashed var(--border-strong)", borderRadius: 8, padding: "32px 20px", textAlign: "center", cursor: "pointer", transition: "all 0.15s", background: "var(--surface)" }}
                     onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--accent)"; (e.currentTarget as HTMLDivElement).style.background = "rgba(0,200,255,0.03)" }}
                     onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border-strong)"; (e.currentTarget as HTMLDivElement).style.background = "var(--surface)" }}
@@ -530,6 +724,211 @@ export default function Home() {
                               <span style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor, boxShadow: `0 0 4px ${dotColor}` }} />
                               {badgeLabel}
                             </span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── TRANSITION ANALYSIS TAB ── */}
+        {activeTab === "transition" && (
+          <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 32, alignItems: "start" }}>
+
+            {/* Left panel */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+              {/* Client name */}
+              <div className="fade-up" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+                <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)" }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Client Name</span>
+                </div>
+                <div style={{ padding: 14 }}>
+                  <input value={clientName} onChange={e => setClientName(e.target.value)}
+                    placeholder="e.g. Jennifer Miller"
+                    style={{ width: "100%", padding: "10px 14px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--font-mono)", fontSize: 13, outline: "none" }}
+                    onFocus={e => { e.target.style.borderColor = "var(--accent)" }}
+                    onBlur={e => { e.target.style.borderColor = "var(--border)" }}
+                  />
+                </div>
+              </div>
+
+              {/* File upload */}
+              <div className="fade-up-1" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+                <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)" }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Upload Rebalancer Export</span>
+                </div>
+                <div style={{ padding: 14 }}>
+                  <div
+                    onClick={() => transitionFileRef.current?.click()}
+                    onDragEnter={e => { e.preventDefault(); e.stopPropagation() }}
+                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); (e.currentTarget as HTMLDivElement).style.borderColor = "var(--accent)"; (e.currentTarget as HTMLDivElement).style.background = "rgba(0,200,255,0.06)" }}
+                    onDragLeave={e => { e.preventDefault(); e.stopPropagation(); (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border-strong)"; (e.currentTarget as HTMLDivElement).style.background = "var(--surface)" }}
+                    onDrop={e => { e.preventDefault(); e.stopPropagation(); (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border-strong)"; (e.currentTarget as HTMLDivElement).style.background = "var(--surface)"; const file = e.dataTransfer.files?.[0]; if (file) handleTransitionImport(file) }}
+                    style={{ border: "1px dashed var(--border-strong)", borderRadius: 8, padding: "28px 20px", textAlign: "center", cursor: "pointer", transition: "all 0.15s", background: "var(--surface)" }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--accent)"; (e.currentTarget as HTMLDivElement).style.background = "rgba(0,200,255,0.03)" }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border-strong)"; (e.currentTarget as HTMLDivElement).style.background = "var(--surface)" }}
+                  >
+                    <div style={{ fontSize: 22, marginBottom: 6, opacity: 0.4 }}>⬆</div>
+                    <div style={{ fontSize: 13, color: "var(--ink-muted)", marginBottom: 4 }}>Drag & drop or click to upload</div>
+                    <div style={{ fontSize: 11, color: "var(--ink-faint)" }}>.xlsx rebalancer export</div>
+                  </div>
+                  <input ref={transitionFileRef} type="file" accept=".xlsx" onChange={e => { const f = e.target.files?.[0]; if (f) handleTransitionImport(f) }} style={{ display: "none" }} />
+                  {transition && (
+                    <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(0,200,255,0.06)", borderRadius: 8, border: "1px solid rgba(0,200,255,0.15)", fontSize: 11, color: "var(--accent)" }}>
+                      {transition.modelName} · {transition.accounts.length} account{transition.accounts.length > 1 ? "s" : ""}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Gains budget */}
+              <div className="fade-up-1" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+                <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)" }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Gains Budget</span>
+                </div>
+                <div style={{ padding: 14 }}>
+                  <div style={{ fontSize: 12, color: "var(--ink-faint)", marginBottom: 10 }}>
+                    Max realized gains. Losses always harvested first and offset budget.
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <div style={{ position: "relative", flex: 1 }}>
+                      <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--ink-faint)", fontSize: 14 }}>$</span>
+                      <input value={transitionBudget} onChange={e => setTransitionBudget(e.target.value.replace(/[^0-9.]/g, ""))}
+                        placeholder="e.g. 10000"
+                        style={{ width: "100%", padding: "10px 12px 10px 24px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--font-mono)", fontSize: 13, outline: "none" }}
+                        onFocus={e => { e.target.style.borderColor = "var(--accent)" }}
+                        onBlur={e => { e.target.style.borderColor = "var(--border)" }}
+                      />
+                    </div>
+                    {transitionFile && (
+                      <button onClick={handleTransitionReprocess} style={{ padding: "10px 14px", background: "var(--accent)", color: "#000", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        Apply
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Tax summary card */}
+              {transition && (
+                <div className="fade-up-2" style={{ padding: "16px 18px", background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent)", fontFamily: "var(--font-mono)", marginBottom: 14 }}>Tax Summary</div>
+                  {[
+                    { label: "Total Value", value: fmt$(transition.totalValue), color: "var(--ink)" },
+                    { label: "Net Realized G/L", value: fmt$(transition.totalTradeGL), color: transition.totalTradeGL >= 0 ? "#00f0c0" : "#ff4488" },
+                    { label: "LT Gains", value: fmt$(transition.ltGains), color: "#00f0c0" },
+                    { label: "ST Gains", value: fmt$(transition.stGains), color: "#ffaa00" },
+                    { label: "Losses", value: fmt$(transition.losses), color: "#ff4488" },
+                    { label: "Est. Tax (20%/37%)", value: fmt$(transition.estimatedTax), color: "#ff4488" },
+                    { label: "Tax Impact", value: `${(transition.taxImpactPct * 100).toFixed(2)}%`, color: "var(--ink-muted)" },
+                  ].map(row => (
+                    <div key={row.label} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12 }}>
+                      <span style={{ color: "var(--ink-faint)" }}>{row.label}</span>
+                      <span style={{ color: row.color, fontFamily: "var(--font-mono)", fontWeight: 600 }}>{row.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Right panel — editable trade list */}
+            <div className="fade-up-2">
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, minHeight: 36 }}>
+                <span style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink)" }}>
+                  {transition ? `${editedTrades.length} Trades` : "Transition Analysis"}
+                </span>
+                {transition && (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Chip label={`${editedTrades.filter(t => t.tradeType === "buy").length} buys`} color="#00f0c0" bg="#001e18" glow="#00f0c0" />
+                    <Chip label={`${editedTrades.filter(t => t.tradeType === "sell").length} sells`} color="#ff4488" bg="#1e0018" glow="#ff4488" />
+                    <button onClick={() => exportTransitionPDF(transition, editedTrades, clientName)}
+                      style={{ padding: "3px 12px", background: "rgba(0,200,255,0.08)", color: "var(--accent)", border: "1px solid rgba(0,200,255,0.25)", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-mono)" }}>
+                      Export PDF
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {!transition && !transitionLoading && (
+                <EmptyState text="Enter client name, set gains budget, then upload the rebalancer export" />
+              )}
+              {transitionLoading && <Skeleton />}
+              {transitionError && (
+                <div style={{ padding: "14px 18px", background: "var(--red-light)", color: "var(--red)", borderRadius: 10, border: "1px solid #ff448833", fontSize: 13 }}>⚠ {transitionError}</div>
+              )}
+
+              {transition && !transitionLoading && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {/* Table header */}
+                  <div style={{ display: "grid", gridTemplateColumns: "80px 80px 1fr 1fr 100px 90px 90px", padding: "8px 16px", gap: 10, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>
+                    <span>Acct</span><span>Type</span><span>Sell</span><span>Buy / Keep</span><span>Trade $</span><span>G/L</span><span>Est. Tax</span>
+                  </div>
+
+                  {editedTrades.map((trade, idx) => {
+                    const isBuy = trade.tradeType === "buy"
+                    const dotColor = isBuy ? "#00f0c0" : "#ff4488"
+
+                    return (
+                      <div key={trade.id} className="fade-up"
+                        style={{ animationDelay: `${idx * 0.02}s`, background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}
+                        onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--border-strong)")}
+                        onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}>
+                        <div style={{ display: "grid", gridTemplateColumns: "80px 80px 1fr 1fr 100px 90px 90px", padding: "12px 16px", gap: 10, alignItems: "center" }}>
+
+                          {/* Account */}
+                          <span style={{ fontSize: 11, color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>{trade.accountNumber || trade.accountId}</span>
+
+                          {/* Buy/Sell badge */}
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "2px 8px", borderRadius: 20, background: isBuy ? "#001e18" : "#1e0018", color: dotColor, fontWeight: 700, border: `1px solid ${dotColor}33` }}>
+                            <span style={{ width: 5, height: 5, borderRadius: "50%", background: dotColor }} />
+                            {isBuy ? "Buy" : "Sell"}
+                          </span>
+
+                          {/* Sell ticker */}
+                          <div>
+                            {!isBuy && (
+                              <>
+                                <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "#ff4488" }}>{trade.ticker}</span>
+                                <div style={{ fontSize: 11, color: "var(--ink-faint)", marginTop: 2 }}>{trade.securityName.length > 30 ? trade.securityName.slice(0,28) + "…" : trade.securityName}</div>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Buy ticker — editable */}
+                          <div>
+                            {isBuy ? (
+                              <input
+                                value={trade.ticker}
+                                onChange={e => updateTrade(trade.id, "ticker", e.target.value.toUpperCase())}
+                                style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--accent)", background: "transparent", border: "none", borderBottom: "1px dashed rgba(0,200,255,0.3)", outline: "none", width: "100px", textShadow: "0 0 12px rgba(0,200,255,0.3)" }}
+                              />
+                            ) : (
+                              trade.mappedTicker && (
+                                <div style={{ fontSize: 11, color: "var(--ink-faint)", fontStyle: "italic" }}>
+                                  → <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)" }}>{trade.mappedTicker}</span>
+                                </div>
+                              )
+                            )}
+                          </div>
+
+                          {/* Trade amount */}
+                          <div style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: isBuy ? "#00f0c0" : "#ff4488" }}>
+                            {isBuy ? "+" : ""}{fmt$(trade.tradeAmount)}
+                          </div>
+
+                          {/* G/L */}
+                          <div style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: trade.realizedGL < 0 ? "#ff4488" : trade.realizedGL > 0 ? "#00f0c0" : "var(--ink-faint)" }}>
+                            {trade.realizedGL !== 0 ? fmt$(trade.realizedGL) : "—"}
+                          </div>
+
+                          {/* Est tax */}
+                          <div style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: trade.estimatedTax > 0 ? "#ffaa00" : "var(--ink-faint)" }}>
+                            {trade.estimatedTax > 0 ? fmt$(trade.estimatedTax) : "—"}
                           </div>
                         </div>
                       </div>
