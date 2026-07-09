@@ -63,147 +63,90 @@ function downloadCSV(rows: string[][], filename: string) {
   a.href = url; a.download = filename; a.click()
 }
 
-// ─── PDF Export ───────────────────────────────────────────────────────────────
-function exportTransitionPDF(transition: import("@/lib/transitionEngine").TransitionSummary, trades: import("@/lib/transitionEngine").TradeRow[], clientName: string) {
+// ─── PDF / Print Export ───────────────────────────────────────────────────────
+function exportTransitionPDF(transition: TransitionSummary, trades: TradeRow[], clientName: string) {
+  const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })
+  const fmtD = (n: number) => n === 0 ? "$0.00" : n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 })
+  const fmtPct = (n: number) => `${(n*100).toFixed(1)}%`
   const sells = trades.filter(t => t.tradeType === "sell").sort((a,b) => a.tradeAmount - b.tradeAmount).slice(0,10)
   const buys  = trades.filter(t => t.tradeType === "buy").sort((a,b) => b.tradeAmount - a.tradeAmount).slice(0,10)
+  const name = clientName || transition.clientName
 
-  const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })
-  const fmtPct = (n: number) => `${(n*100).toFixed(1)}%`
-  const fmtGL = (n: number) => n === 0 ? "$0.00" : n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 })
-
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Transition Analysis</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Georgia', serif; font-size: 11px; color: #2a2a2a; background: #fff; padding: 48px; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; padding-bottom: 20px; border-bottom: 2px solid #c8b89a; }
-  .logo { font-size: 28px; font-weight: 700; color: #2a2a2a; font-family: sans-serif; }
-  .title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
-  .subtitle { font-size: 12px; color: #666; }
-  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
-  .metric { border: 1px solid #ddd; padding: 14px 16px; border-radius: 4px; }
-  .metric-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-bottom: 8px; font-family: sans-serif; }
-  .metric-value { font-size: 20px; font-weight: 700; }
-  .metric-value.red { color: #c0392b; }
-  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #888; margin-bottom: 12px; font-family: sans-serif; border-bottom: 2px solid #c8b89a; padding-bottom: 6px; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 28px; }
-  th { background: #3d3427; color: #fff; padding: 8px 10px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; font-family: sans-serif; }
-  td { padding: 7px 10px; border-bottom: 1px solid #eee; font-size: 11px; }
-  tr:nth-child(even) td { background: #f9f7f4; }
-  .right { text-align: right; }
-  .red { color: #c0392b; font-weight: 600; }
-  .green { color: #1a7a4a; font-weight: 600; }
-  .tax-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 28px; }
-  .tax-box { border: 1px solid #ddd; padding: 16px; }
-  .tax-box-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; background: #3d3427; color: #fff; padding: 6px 10px; margin: -16px -16px 12px; font-family: sans-serif; }
-  .tax-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #f0ece6; font-size: 11px; }
-  .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #ddd; font-size: 9px; color: #999; font-family: sans-serif; }
-  .page2 { page-break-before: always; padding-top: 48px; }
-</style>
-</head>
-<body>
-
-<!-- PAGE 1 -->
-<div class="header">
-  <div>
-    <div class="title">Portfolio Transition Analysis</div>
-    <div class="subtitle">Client: ${clientName || transition.clientName}</div>
-    <div class="subtitle">Prepared by Savvy Advisors · ${transition.date}</div>
-    <div class="subtitle" style="margin-top:6px">Target Model: ${transition.modelName}</div>
-  </div>
-  <div class="logo">Savvy</div>
-</div>
-
+*{margin:0;padding:0;box-sizing:border-box}body{font-family:Georgia,serif;font-size:11px;color:#2a2a2a;padding:48px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:18px;border-bottom:2px solid #c8b89a}
+.logo{font-size:26px;font-weight:700;font-family:sans-serif}.title{font-size:20px;font-weight:700;margin-bottom:5px}
+.sub{font-size:11px;color:#666;margin-bottom:2px}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:28px}
+.metric{border:1px solid #ddd;padding:12px 14px}.metric-label{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:6px;font-family:sans-serif}
+.metric-value{font-size:18px;font-weight:700}.red{color:#c0392b}.green{color:#1a7a4a}
+.section{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#888;border-bottom:2px solid #c8b89a;padding-bottom:5px;margin-bottom:10px;font-family:sans-serif}
+table{width:100%;border-collapse:collapse;margin-bottom:24px}
+th{background:#3d3427;color:#fff;padding:7px 9px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.06em;font-family:sans-serif}
+td{padding:6px 9px;border-bottom:1px solid #eee;font-size:10px}tr:nth-child(even) td{background:#f9f7f4}
+.right{text-align:right}.tax-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px}
+.tax-box{border:1px solid #ddd;padding:14px}.tax-title{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#3d3427;color:#fff;padding:5px 9px;margin:-14px -14px 10px;font-family:sans-serif}
+.tax-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0ece6;font-size:10px}
+.footer{margin-top:28px;padding-top:10px;border-top:1px solid #ddd;font-size:9px;color:#999;font-family:sans-serif}
+.page2{page-break-before:always;padding-top:48px}
+@media print{.page2{page-break-before:always}}
+</style></head><body>
+<div class="header"><div>
+<div class="title">Portfolio Transition Analysis</div>
+<div class="sub">Client: ${name}</div>
+<div class="sub">Prepared by Savvy Advisors · ${transition.date}</div>
+<div class="sub" style="margin-top:4px">Target Model: ${transition.modelName}</div>
+</div><div class="logo">Savvy</div></div>
 <div class="metrics">
-  <div class="metric"><div class="metric-label">Total Value</div><div class="metric-value">${fmt(transition.totalValue)}</div></div>
-  <div class="metric"><div class="metric-label">Transition G/L</div><div class="metric-value ${transition.totalTradeGL < 0 ? 'red' : ''}">${fmtGL(transition.totalTradeGL)}</div></div>
-  <div class="metric"><div class="metric-label">Estimated Tax</div><div class="metric-value red">${fmtGL(transition.estimatedTax)}</div></div>
-  <div class="metric"><div class="metric-label">Tax Impact</div><div class="metric-value red">${(transition.taxImpactPct * 100).toFixed(2)}%</div></div>
+<div class="metric"><div class="metric-label">Total Value</div><div class="metric-value">${fmt(transition.totalValue)}</div></div>
+<div class="metric"><div class="metric-label">Transition G/L</div><div class="metric-value ${transition.totalTradeGL < 0 ? "red" : ""}">${fmtD(transition.totalTradeGL)}</div></div>
+<div class="metric"><div class="metric-label">Estimated Tax</div><div class="metric-value red">${fmtD(transition.estimatedTax)}</div></div>
+<div class="metric"><div class="metric-label">Tax Impact</div><div class="metric-value red">${(transition.taxImpactPct*100).toFixed(2)}%</div></div>
 </div>
-
-<div class="section-title">Asset Allocation</div>
-<table>
-  <tr><th>Asset Class</th><th class="right">Current %</th><th class="right">Target %</th><th class="right">Post-Trade %</th><th class="right">Trade Amount</th></tr>
-  ${transition.assetAllocation.map(row => `
-  <tr>
-    <td>${row.assetClass}</td>
-    <td class="right">${fmtPct(row.currentPct)}</td>
-    <td class="right">${fmtPct(row.targetPct)}</td>
-    <td class="right" style="font-weight:700;color:#1a5c8a">${fmtPct(row.postTradePct)}</td>
-    <td class="right ${row.tradeAmount < 0 ? 'red' : 'green'}">${row.tradeAmount >= 0 ? '+' : ''}${fmt(row.tradeAmount)}</td>
-  </tr>`).join("")}
+<div class="section">Asset Allocation</div>
+<table><tr><th>Asset Class</th><th class="right">Current %</th><th class="right">Target %</th><th class="right">Post-Trade %</th><th class="right">Trade Amount</th></tr>
+${transition.assetAllocation.map(r => `<tr><td>${r.assetClass}</td><td class="right">${fmtPct(r.currentPct)}</td><td class="right">${fmtPct(r.targetPct)}</td><td class="right" style="font-weight:700;color:#1a5c8a">${fmtPct(r.postTradePct)}</td><td class="right ${r.tradeAmount<0?"red":"green"}">${r.tradeAmount>=0?"+":""}${fmt(r.tradeAmount)}</td></tr>`).join("")}
 </table>
-
 <div class="tax-grid">
-  <div class="tax-box">
-    <div class="tax-box-title">Pre-Transition</div>
-    <div class="tax-row"><span>Unrealized G/L</span><span>${fmtGL(transition.ltGains + transition.stGains + transition.losses)}</span></div>
-    <div class="tax-row"><span>Gains</span><span>${fmtGL(transition.ltGains + transition.stGains)}</span></div>
-    <div class="tax-row"><span>Losses</span><span class="red">${fmtGL(transition.losses)}</span></div>
-  </div>
-  <div class="tax-box">
-    <div class="tax-box-title">Post-Transition</div>
-    <div class="tax-row" style="font-weight:600"><span>Realized Gains</span><span></span></div>
-    <div class="tax-row"><span>&nbsp;&nbsp;Long Term</span><span>${fmtGL(transition.ltGains)}</span></div>
-    <div class="tax-row"><span>&nbsp;&nbsp;Short Term</span><span>${fmtGL(transition.stGains)}</span></div>
-    <div class="tax-row"><span>Net Realized G/L</span><span>${fmtGL(transition.totalTradeGL)}</span></div>
-    <div class="tax-row"><span>YTD Gain (Post-Trade)</span><span>${fmtGL(transition.totalTradeGL)}</span></div>
-    <div class="tax-row"><span>Estimated Tax</span><span class="red">${fmtGL(transition.estimatedTax)}</span></div>
-    <div class="tax-row"><span># of Trades</span><span>${transition.numTrades}</span></div>
-  </div>
+<div class="tax-box"><div class="tax-title">Pre-Transition</div>
+<div class="tax-row"><span>Unrealized G/L</span><span>${fmtD(transition.ltGains+transition.stGains+transition.losses)}</span></div>
+<div class="tax-row"><span>Gains</span><span>${fmtD(transition.ltGains+transition.stGains)}</span></div>
+<div class="tax-row"><span>Losses</span><span class="red">${fmtD(transition.losses)}</span></div>
 </div>
-
+<div class="tax-box"><div class="tax-title">Post-Transition</div>
+<div class="tax-row" style="font-weight:600"><span>Realized Gains</span></div>
+<div class="tax-row"><span>&nbsp;&nbsp;Long Term</span><span>${fmtD(transition.ltGains)}</span></div>
+<div class="tax-row"><span>&nbsp;&nbsp;Short Term</span><span>${fmtD(transition.stGains)}</span></div>
+<div class="tax-row"><span>Net Realized G/L</span><span>${fmtD(transition.totalTradeGL)}</span></div>
+<div class="tax-row"><span>Estimated Tax</span><span class="red">${fmtD(transition.estimatedTax)}</span></div>
+<div class="tax-row"><span># of Trades</span><span>${transition.numTrades}</span></div>
+</div></div>
 <div class="footer">This analysis is for internal advisory use only. Tax estimates are approximate and do not constitute tax advice.</div>
-
-<!-- PAGE 2 -->
 <div class="page2">
-<div class="header">
-  <div>
-    <div class="title">Detailed Trade Analysis</div>
-    <div class="subtitle">Client: ${clientName || transition.clientName}</div>
-    <div class="subtitle">Prepared by Savvy Advisors · ${transition.date}</div>
-  </div>
-  <div class="logo">Savvy</div>
-</div>
-
-<div class="section-title">Accounts</div>
-<table>
-  <tr><th>Account</th><th>Reg Type</th><th class="right">Account Value</th></tr>
-  ${transition.accounts.map(a => `<tr><td>${a.accountNumber || a.accountId}</td><td>${a.regType || "—"}</td><td class="right">${fmt(a.value)}</td></tr>`).join("")}
+<div class="header"><div><div class="title">Detailed Trade Analysis</div><div class="sub">Client: ${name}</div><div class="sub">Prepared by Savvy Advisors · ${transition.date}</div></div><div class="logo">Savvy</div></div>
+<div class="section">Accounts</div>
+<table><tr><th>Account</th><th>Reg Type</th><th class="right">Account Value</th></tr>
+${transition.accounts.map(a => `<tr><td>${a.accountNumber}</td><td>${a.regType||"—"}</td><td class="right">${fmt(a.value)}</td></tr>`).join("")}
 </table>
-
-<div class="section-title">Top 10 Buys</div>
-<table>
-  <tr><th>Account</th><th>Ticker</th><th>Security Name</th><th class="right">Trade $</th></tr>
-  ${buys.map(t => `<tr><td>${t.accountNumber || t.accountId}</td><td>${t.ticker}</td><td>${t.securityName}</td><td class="right green">+${fmt(t.tradeAmount)}</td></tr>`).join("")}
+<div class="section">Top 10 Buys</div>
+<table><tr><th>Account</th><th>Ticker</th><th>Security Name</th><th class="right">Trade $</th></tr>
+${buys.map(t => `<tr><td>${t.accountNumber}</td><td>${t.ticker}</td><td>${t.securityName}</td><td class="right green">+${fmt(t.tradeAmount)}</td></tr>`).join("")}
 </table>
-
-<div class="section-title">Top 10 Sells</div>
-<table>
-  <tr><th>Account</th><th>Ticker</th><th>Security Name</th><th class="right">Trade $</th><th class="right">G/L $</th></tr>
-  ${sells.map(t => `<tr><td>${t.accountNumber || t.accountId}</td><td>${t.ticker}</td><td>${t.securityName}</td><td class="right red">${fmt(t.tradeAmount)}</td><td class="${t.realizedGL < 0 ? 'red' : t.realizedGL > 0 ? 'green' : ''} right">${t.realizedGL !== 0 ? fmtGL(t.realizedGL) : "$0.00"}</td></tr>`).join("")}
+<div class="section">Top 10 Sells</div>
+<table><tr><th>Account</th><th>Ticker</th><th>Security Name</th><th class="right">Trade $</th><th class="right">G/L $</th></tr>
+${sells.map(t => `<tr><td>${t.accountNumber}</td><td>${t.ticker}</td><td>${t.securityName}</td><td class="right red">${fmt(t.tradeAmount)}</td><td class="${t.realizedGL<0?"red":t.realizedGL>0?"green":""} right">${t.realizedGL!==0?fmtD(t.realizedGL):"$0.00"}</td></tr>`).join("")}
 </table>
-
 <div class="footer">This analysis is for internal advisory use only. Tax estimates are approximate and do not constitute tax advice.</div>
-</div>
+</div></body></html>`
 
-</body></html>`
-
-  const blob = new Blob([html], { type: "text/html" })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = `Transition-Analysis-${(clientName || "Client").replace(/\s+/g,"-")}-${new Date().toISOString().slice(0,10)}.html`
-  a.click()
-  setTimeout(() => window.open(url, "_blank"), 100)
+  const w = window.open("", "_blank")
+  if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500) }
 }
 
 // ─── Main component ────────────────────────────────────────────────────────────
 export default function Home() {
-const [activeTab, setActiveTab] = useState<"manual" | "import" | "transition">("import")
+  const [activeTab, setActiveTab] = useState<"manual" | "import">("manual")
 
   // Shared data
   const [msData, setMsData] = useState<MorningstarRow[]>([])
@@ -232,13 +175,14 @@ const [activeTab, setActiveTab] = useState<"manual" | "import" | "transition">("
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
 
-  // Transition tab
+  // Transition tab state
   const [transition, setTransition] = useState<TransitionSummary | null>(null)
   const [transitionLoading, setTransitionLoading] = useState(false)
   const [transitionError, setTransitionError] = useState<string | null>(null)
   const [clientName, setClientName] = useState("")
   const [transitionBudget, setTransitionBudget] = useState("")
   const [editedTrades, setEditedTrades] = useState<TradeRow[]>([])
+  const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set())
   const transitionFileRef = useRef<HTMLInputElement>(null)
   const [transitionFile, setTransitionFile] = useState<File | null>(null)
 
@@ -300,9 +244,10 @@ const [activeTab, setActiveTab] = useState<"manual" | "import" | "transition">("
     } finally { setImportLoading(false) }
   }, [uploadedFile, gainsBudget])
 
+  // ─── Transition handlers ───────────────────────────────────────────────────
   const handleTransitionImport = async (file: File) => {
     setTransitionFile(file)
-    setTransitionLoading(true); setTransitionError(null); setTransition(null)
+    setTransitionLoading(true); setTransitionError(null); setTransition(null); setEditedTrades([])
     try {
       const formData = new FormData()
       formData.append("file", file)
@@ -313,6 +258,9 @@ const [activeTab, setActiveTab] = useState<"manual" | "import" | "transition">("
       if (data.error) throw new Error(data.error)
       setTransition(data.transition)
       setEditedTrades(data.transition.trades)
+      // Default: expand all asset classes
+      const classes = new Set<string>(data.transition.trades.map((t: TradeRow) => t.assetClass))
+      setExpandedClasses(classes)
     } catch (e) { setTransitionError(String(e)) }
     finally { setTransitionLoading(false) }
   }
@@ -330,21 +278,34 @@ const [activeTab, setActiveTab] = useState<"manual" | "import" | "transition">("
       if (data.error) throw new Error(data.error)
       setTransition(data.transition)
       setEditedTrades(data.transition.trades)
+      const classes = new Set<string>(data.transition.trades.map((t: TradeRow) => t.assetClass))
+      setExpandedClasses(classes)
     } catch (e) { setTransitionError(String(e)) }
     finally { setTransitionLoading(false) }
   }
 
-  const updateTrade = (id: string, field: keyof TradeRow, value: string | number | boolean) => {
+  const updateTrade = (id: string, field: string, value: string | number | boolean) => {
     setEditedTrades(prev => prev.map(t => {
       if (t.id !== id) return t
       const updated = { ...t, [field]: value, userOverride: true }
-      // Recalc tax if realizedGL changed
+      // Recalc tax if ticker or GL changed
       if (field === "realizedGL") {
         const gl = Number(value)
-        updated.estimatedTax = gl > 0 ? gl * (updated.isLongTerm ? 0.20 : 0.37) : 0
+        updated.estimatedTax = gl > 0
+          ? (updated.realizedGLLT > 0 ? updated.realizedGLLT * 0.20 : 0) + (updated.realizedGLST > 0 ? updated.realizedGLST * 0.37 : 0)
+          : 0
       }
       return updated
     }))
+  }
+
+  const toggleClass = (assetClass: string) => {
+    setExpandedClasses(prev => {
+      const next = new Set(prev)
+      if (next.has(assetClass)) next.delete(assetClass)
+      else next.add(assetClass)
+      return next
+    })
   }
 
   const selectedModelInfo = MODELS.find(m => m.id === selectedModel)!
@@ -392,7 +353,7 @@ const [activeTab, setActiveTab] = useState<"manual" | "import" | "transition">("
                 fontSize: 12, fontWeight: 700, fontFamily: "var(--font-mono)",
                 textTransform: "uppercase", letterSpacing: "0.06em", transition: "all 0.15s",
               }}>
-                {tab === "manual" ? "Manual" : tab === "import" ? "Security Mapper" : "Transition Analysis"}
+                {tab === "manual" ? "Manual" : tab === "import" ? "Security Mapper" : "Transition"}
               </button>
             ))}
           </div>
@@ -737,7 +698,7 @@ const [activeTab, setActiveTab] = useState<"manual" | "import" | "transition">("
 
         {/* ── TRANSITION ANALYSIS TAB ── */}
         {activeTab === "transition" && (
-          <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 32, alignItems: "start" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 32, alignItems: "start" }}>
 
             {/* Left panel */}
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -748,8 +709,7 @@ const [activeTab, setActiveTab] = useState<"manual" | "import" | "transition">("
                   <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Client Name</span>
                 </div>
                 <div style={{ padding: 14 }}>
-                  <input value={clientName} onChange={e => setClientName(e.target.value)}
-                    placeholder="e.g. Jennifer Miller"
+                  <input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="e.g. Jennifer Miller"
                     style={{ width: "100%", padding: "10px 14px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--font-mono)", fontSize: 13, outline: "none" }}
                     onFocus={e => { e.target.style.borderColor = "var(--accent)" }}
                     onBlur={e => { e.target.style.borderColor = "var(--border)" }}
@@ -760,7 +720,7 @@ const [activeTab, setActiveTab] = useState<"manual" | "import" | "transition">("
               {/* File upload */}
               <div className="fade-up-1" style={{ background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
                 <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)" }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Upload Rebalancer Export</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Upload Export</span>
                 </div>
                 <div style={{ padding: 14 }}>
                   <div
@@ -774,7 +734,7 @@ const [activeTab, setActiveTab] = useState<"manual" | "import" | "transition">("
                     onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border-strong)"; (e.currentTarget as HTMLDivElement).style.background = "var(--surface)" }}
                   >
                     <div style={{ fontSize: 22, marginBottom: 6, opacity: 0.4 }}>⬆</div>
-                    <div style={{ fontSize: 13, color: "var(--ink-muted)", marginBottom: 4 }}>Drag & drop or click to upload</div>
+                    <div style={{ fontSize: 13, color: "var(--ink-muted)", marginBottom: 4 }}>Drag & drop or click</div>
                     <div style={{ fontSize: 11, color: "var(--ink-faint)" }}>.xlsx rebalancer export</div>
                   </div>
                   <input ref={transitionFileRef} type="file" accept=".xlsx" onChange={e => { const f = e.target.files?.[0]; if (f) handleTransitionImport(f) }} style={{ display: "none" }} />
@@ -792,39 +752,32 @@ const [activeTab, setActiveTab] = useState<"manual" | "import" | "transition">("
                   <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", letterSpacing: "0.12em", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Gains Budget</span>
                 </div>
                 <div style={{ padding: 14 }}>
-                  <div style={{ fontSize: 12, color: "var(--ink-faint)", marginBottom: 10 }}>
-                    Max realized gains. Losses always harvested first and offset budget.
-                  </div>
+                  <div style={{ fontSize: 12, color: "var(--ink-faint)", marginBottom: 10 }}>Max realized gains. Losses offset budget automatically.</div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <div style={{ position: "relative", flex: 1 }}>
                       <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--ink-faint)", fontSize: 14 }}>$</span>
-                      <input value={transitionBudget} onChange={e => setTransitionBudget(e.target.value.replace(/[^0-9.]/g, ""))}
-                        placeholder="e.g. 10000"
+                      <input value={transitionBudget} onChange={e => setTransitionBudget(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="e.g. 10000"
                         style={{ width: "100%", padding: "10px 12px 10px 24px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--font-mono)", fontSize: 13, outline: "none" }}
                         onFocus={e => { e.target.style.borderColor = "var(--accent)" }}
                         onBlur={e => { e.target.style.borderColor = "var(--border)" }}
                       />
                     </div>
-                    {transitionFile && (
-                      <button onClick={handleTransitionReprocess} style={{ padding: "10px 14px", background: "var(--accent)", color: "#000", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                        Apply
-                      </button>
-                    )}
+                    {transitionFile && <button onClick={handleTransitionReprocess} style={{ padding: "10px 14px", background: "var(--accent)", color: "#000", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Apply</button>}
                   </div>
                 </div>
               </div>
 
-              {/* Tax summary card */}
+              {/* Tax summary */}
               {transition && (
                 <div className="fade-up-2" style={{ padding: "16px 18px", background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 12 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent)", fontFamily: "var(--font-mono)", marginBottom: 14 }}>Tax Summary</div>
                   {[
                     { label: "Total Value", value: fmt$(transition.totalValue), color: "var(--ink)" },
+                    { label: "LT Gains (20%)", value: fmt$(transition.ltGains), color: "#00f0c0" },
+                    { label: "ST Gains (37%)", value: fmt$(transition.stGains), color: "#ffaa00" },
+                    { label: "Losses Harvested", value: fmt$(Math.abs(transition.losses)), color: "#ff4488" },
                     { label: "Net Realized G/L", value: fmt$(transition.totalTradeGL), color: transition.totalTradeGL >= 0 ? "#00f0c0" : "#ff4488" },
-                    { label: "LT Gains", value: fmt$(transition.ltGains), color: "#00f0c0" },
-                    { label: "ST Gains", value: fmt$(transition.stGains), color: "#ffaa00" },
-                    { label: "Losses", value: fmt$(transition.losses), color: "#ff4488" },
-                    { label: "Est. Tax (20%/37%)", value: fmt$(transition.estimatedTax), color: "#ff4488" },
+                    { label: "Estimated Tax", value: fmt$(transition.estimatedTax), color: "#ff4488" },
                     { label: "Tax Impact", value: `${(transition.taxImpactPct * 100).toFixed(2)}%`, color: "var(--ink-muted)" },
                   ].map(row => (
                     <div key={row.label} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12 }}>
@@ -836,7 +789,7 @@ const [activeTab, setActiveTab] = useState<"manual" | "import" | "transition">("
               )}
             </div>
 
-            {/* Right panel — editable trade list */}
+            {/* Right panel — grouped editable trades */}
             <div className="fade-up-2">
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, minHeight: 36 }}>
                 <span style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink)" }}>
@@ -854,88 +807,117 @@ const [activeTab, setActiveTab] = useState<"manual" | "import" | "transition">("
                 )}
               </div>
 
-              {!transition && !transitionLoading && (
-                <EmptyState text="Enter client name, set gains budget, then upload the rebalancer export" />
-              )}
+              {!transition && !transitionLoading && <EmptyState text="Enter client name, set gains budget, then upload the rebalancer export" />}
               {transitionLoading && <Skeleton />}
-              {transitionError && (
-                <div style={{ padding: "14px 18px", background: "var(--red-light)", color: "var(--red)", borderRadius: 10, border: "1px solid #ff448833", fontSize: 13 }}>⚠ {transitionError}</div>
-              )}
+              {transitionError && <div style={{ padding: "14px 18px", background: "var(--red-light)", color: "var(--red)", borderRadius: 10, border: "1px solid #ff448833", fontSize: 13 }}>⚠ {transitionError}</div>}
 
-              {transition && !transitionLoading && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {/* Table header */}
-                  <div style={{ display: "grid", gridTemplateColumns: "80px 80px 1fr 1fr 100px 90px 90px", padding: "8px 16px", gap: 10, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>
-                    <span>Acct</span><span>Type</span><span>Sell</span><span>Buy / Keep</span><span>Trade $</span><span>G/L</span><span>Est. Tax</span>
-                  </div>
+              {transition && !transitionLoading && (() => {
+                // Group trades by asset class
+                const assetClasses = Array.from(new Set(editedTrades.map(t => t.assetClass)))
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {assetClasses.map(ac => {
+                      const classTrades = editedTrades.filter(t => t.assetClass === ac)
+                      const isExpanded = expandedClasses.has(ac)
+                      const classTradeAmt = classTrades.reduce((s, t) => s + t.tradeAmount, 0)
+                      const classGL = classTrades.reduce((s, t) => s + t.realizedGL, 0)
+                      const classTax = classTrades.reduce((s, t) => s + t.estimatedTax, 0)
 
-                  {editedTrades.map((trade, idx) => {
-                    const isBuy = trade.tradeType === "buy"
-                    const dotColor = isBuy ? "#00f0c0" : "#ff4488"
-
-                    return (
-                      <div key={trade.id} className="fade-up"
-                        style={{ animationDelay: `${idx * 0.02}s`, background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}
-                        onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--border-strong)")}
-                        onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}>
-                        <div style={{ display: "grid", gridTemplateColumns: "80px 80px 1fr 1fr 100px 90px 90px", padding: "12px 16px", gap: 10, alignItems: "center" }}>
-
-                          {/* Account */}
-                          <span style={{ fontSize: 11, color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>{trade.accountNumber || trade.accountId}</span>
-
-                          {/* Buy/Sell badge */}
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "2px 8px", borderRadius: 20, background: isBuy ? "#001e18" : "#1e0018", color: dotColor, fontWeight: 700, border: `1px solid ${dotColor}33` }}>
-                            <span style={{ width: 5, height: 5, borderRadius: "50%", background: dotColor }} />
-                            {isBuy ? "Buy" : "Sell"}
-                          </span>
-
-                          {/* Sell ticker */}
-                          <div>
-                            {!isBuy && (
-                              <>
-                                <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "#ff4488" }}>{trade.ticker}</span>
-                                <div style={{ fontSize: 11, color: "var(--ink-faint)", marginTop: 2 }}>{trade.securityName.length > 30 ? trade.securityName.slice(0,28) + "…" : trade.securityName}</div>
-                              </>
-                            )}
+                      return (
+                        <div key={ac} style={{ background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+                          {/* Class header — clickable to expand */}
+                          <div
+                            onClick={() => toggleClass(ac)}
+                            style={{ display: "grid", gridTemplateColumns: "1fr 100px 90px 90px 30px", padding: "12px 16px", gap: 10, alignItems: "center", cursor: "pointer", borderBottom: isExpanded ? "1px solid var(--border)" : "none" }}
+                            onMouseEnter={e => (e.currentTarget.style.background = "rgba(0,200,255,0.03)")}
+                            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                          >
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>{ac}</span>
+                            <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: classTradeAmt >= 0 ? "#00f0c0" : "#ff4488", textAlign: "right" }}>
+                              {classTradeAmt >= 0 ? "+" : ""}{fmt$(classTradeAmt)}
+                            </span>
+                            <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: classGL !== 0 ? (classGL > 0 ? "#00f0c0" : "#ff4488") : "var(--ink-faint)", textAlign: "right" }}>
+                              {classGL !== 0 ? fmt$(classGL) : "—"}
+                            </span>
+                            <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: classTax > 0 ? "#ffaa00" : "var(--ink-faint)", textAlign: "right" }}>
+                              {classTax > 0 ? fmt$(classTax) : "—"}
+                            </span>
+                            <span style={{ fontSize: 14, color: "var(--ink-faint)", textAlign: "center" }}>{isExpanded ? "▼" : "▶"}</span>
                           </div>
 
-                          {/* Buy ticker — editable */}
-                          <div>
-                            {isBuy ? (
-                              <input
-                                value={trade.ticker}
-                                onChange={e => updateTrade(trade.id, "ticker", e.target.value.toUpperCase())}
-                                style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--accent)", background: "transparent", border: "none", borderBottom: "1px dashed rgba(0,200,255,0.3)", outline: "none", width: "100px", textShadow: "0 0 12px rgba(0,200,255,0.3)" }}
-                              />
-                            ) : (
-                              trade.mappedTicker && (
-                                <div style={{ fontSize: 11, color: "var(--ink-faint)", fontStyle: "italic" }}>
-                                  → <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)" }}>{trade.mappedTicker}</span>
+                          {/* Class header row */}
+                          {isExpanded && (
+                            <div style={{ padding: "6px 16px", background: "var(--surface-sunken)", display: "grid", gridTemplateColumns: "30px 80px 1fr 1fr 100px 90px 90px", gap: 8, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>
+                              <span></span><span>Type</span><span>Sell</span><span>Buy / Target</span><span style={{ textAlign: "right" }}>Trade $</span><span style={{ textAlign: "right" }}>G/L</span><span style={{ textAlign: "right" }}>Est. Tax</span>
+                            </div>
+                          )}
+
+                          {/* Individual trades */}
+                          {isExpanded && classTrades.map((trade, idx) => {
+                            const isBuy = trade.tradeType === "buy"
+                            const dotColor = isBuy ? "#00f0c0" : "#ff4488"
+                            return (
+                              <div key={trade.id} style={{ display: "grid", gridTemplateColumns: "30px 80px 1fr 1fr 100px 90px 90px", padding: "10px 16px", gap: 8, alignItems: "center", borderTop: "1px solid var(--border)", background: idx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
+                                <span style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor, boxShadow: `0 0 4px ${dotColor}`, display: "inline-block" }} />
+
+                                {/* Type badge */}
+                                <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: isBuy ? "#001e18" : "#1e0018", color: dotColor, fontWeight: 700, border: `1px solid ${dotColor}33`, whiteSpace: "nowrap" }}>
+                                  {isBuy ? "Buy" : trade.isKeep ? "Rebal" : "Sell"}
+                                </span>
+
+                                {/* Sell ticker */}
+                                <div>
+                                  {!isBuy && (
+                                    <>
+                                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "#ff4488" }}>{trade.ticker}</span>
+                                      <div style={{ fontSize: 10, color: "var(--ink-faint)", marginTop: 1 }}>{trade.securityName.length > 32 ? trade.securityName.slice(0,30) + "…" : trade.securityName}</div>
+                                    </>
+                                  )}
                                 </div>
-                              )
-                            )}
-                          </div>
 
-                          {/* Trade amount */}
-                          <div style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: isBuy ? "#00f0c0" : "#ff4488" }}>
-                            {isBuy ? "+" : ""}{fmt$(trade.tradeAmount)}
-                          </div>
+                                {/* Buy ticker — editable */}
+                                <div>
+                                  {isBuy ? (
+                                    <div>
+                                      <input
+                                        value={trade.ticker}
+                                        onChange={e => updateTrade(trade.id, "ticker", e.target.value.toUpperCase())}
+                                        style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "var(--accent)", background: "transparent", border: "none", borderBottom: "1px dashed rgba(0,200,255,0.4)", outline: "none", width: 80, textShadow: "0 0 10px rgba(0,200,255,0.3)" }}
+                                      />
+                                      <div style={{ fontSize: 10, color: "var(--ink-faint)", marginTop: 1 }}>{trade.securityName.length > 32 ? trade.securityName.slice(0,30) + "…" : trade.securityName}</div>
+                                    </div>
+                                  ) : (
+                                    trade.mappedTicker && (
+                                      <span style={{ fontSize: 10, color: "var(--ink-faint)", fontStyle: "italic" }}>
+                                        → <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)" }}>{trade.mappedTicker}</span>
+                                      </span>
+                                    )
+                                  )}
+                                </div>
 
-                          {/* G/L */}
-                          <div style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: trade.realizedGL < 0 ? "#ff4488" : trade.realizedGL > 0 ? "#00f0c0" : "var(--ink-faint)" }}>
-                            {trade.realizedGL !== 0 ? fmt$(trade.realizedGL) : "—"}
-                          </div>
+                                {/* Trade amount */}
+                                <div style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: isBuy ? "#00f0c0" : "#ff4488" }}>
+                                  {isBuy ? "+" : ""}{fmt$(Math.abs(trade.tradeAmount))}
+                                </div>
 
-                          {/* Est tax */}
-                          <div style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: trade.estimatedTax > 0 ? "#ffaa00" : "var(--ink-faint)" }}>
-                            {trade.estimatedTax > 0 ? fmt$(trade.estimatedTax) : "—"}
-                          </div>
+                                {/* G/L */}
+                                <div style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: trade.realizedGL < 0 ? "#ff4488" : trade.realizedGL > 0 ? "#00f0c0" : "var(--ink-faint)" }}>
+                                  {trade.realizedGL !== 0 ? fmt$(trade.realizedGL) : "—"}
+                                </div>
+
+                                {/* Est tax */}
+                                <div style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: trade.estimatedTax > 0 ? "#ffaa00" : "var(--ink-faint)" }}>
+                                  {trade.estimatedTax > 0 ? fmt$(trade.estimatedTax) : "—"}
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+                      )
+                    })}
+                  </div>
+                )
+              })()}
             </div>
           </div>
         )}
