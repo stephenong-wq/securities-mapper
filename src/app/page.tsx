@@ -146,7 +146,7 @@ ${sells.map(t => `<tr><td>${t.accountNumber}</td><td>${t.ticker}</td><td>${t.sec
 
 // ─── Main component ────────────────────────────────────────────────────────────
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"manual" | "import">("manual")
+const [activeTab, setActiveTab] = useState<"manual" | "import" | "transition">("import")
 
   // Shared data
   const [msData, setMsData] = useState<MorningstarRow[]>([])
