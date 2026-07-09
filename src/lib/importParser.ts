@@ -13,7 +13,10 @@ export interface ImportHolding {
   unrealizedGL: number
   unrealizedGLPct: number
   price: number
+  isLongTerm?: boolean   // true = long-term holding, false = short-term
 }
+
+
 
 export interface ImportMatch {
   ticker: string
@@ -29,6 +32,7 @@ export interface ImportMatch {
 export interface AccountData {
   accountId: string
   accountNumber: string
+  regType: string
   modelName: string
   inModel: ImportHolding[]
   unassigned: ImportHolding[]
@@ -284,6 +288,8 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
     const unrealizedGL  = parseFloat(String(row["Unrealized G/L $"] || "0")) || 0
     const unrealizedGLPct = parseFloat(String(row["Unrealized G/L %"] || "0")) || 0
     const name          = String(row["Security Name"] || ticker).trim()
+    const holdingPeriod = String(row["Holding Period"] || row["Term"] || "").toLowerCase()
+    const isLongTerm    = holdingPeriod ? holdingPeriod.includes("long") : true
     const target        = targetMap.get(ticker) || { targetValue: 0, targetPct: 0 }
 
     if (!accountMap.has(accountId)) {
@@ -298,6 +304,7 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
       unrealizedGL, unrealizedGLPct,
       targetValue: target.targetValue,
       targetPct: target.targetPct,
+      isLongTerm,
     }
 
     if (secSet === "Unassigned") acct.unassigned.push(holding)
@@ -307,9 +314,22 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
   const allSecSets = Array.from(accountMap.values()).flatMap(a => a.secSets)
   const overallModelName = inferModelName(allSecSets)
 
+  // Read reg type from Account and Cash Details
+  const regTypeMap = new Map<string, string>()
+  const cashSheet2 = wb.Sheets["Account and Cash Details"]
+  if (cashSheet2) {
+    const cashRows2 = XLSX.utils.sheet_to_json<Record<string, string | number>>(cashSheet2, { defval: "" })
+    cashRows2.forEach(row => {
+      const id = String(row["Account ID"] || "").trim()
+      const reg = String(row["Registration Type"] || row["Reg Type"] || row["Account Type"] || "").trim()
+      if (id) regTypeMap.set(id, reg)
+    })
+  }
+
   const accounts: AccountData[] = Array.from(accountMap.entries()).map(([accountId, data]) => ({
     accountId,
     accountNumber: data.accountNumber,
+    regType: regTypeMap.get(accountId) || "",
     modelName: inferModelName(data.secSets),
     inModel: data.inModel,
     unassigned: data.unassigned,
