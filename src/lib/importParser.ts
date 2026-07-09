@@ -4,19 +4,21 @@ export interface ImportHolding {
   ticker: string
   name: string
   secSet: string
-  msCategory: string
-  productClass: string
+  msCategory: string        // Product Sub-Class
+  productClass: string      // Product Class
+  modelCategory: string     // Model Category (e.g. "Savvy Strategic 60/40 Fixed Income")
+  modelClass: string        // Model Class
   currentValue: number
   currentShares: number
   targetValue: number
   targetPct: number
   unrealizedGL: number
   unrealizedGLPct: number
+  unrealizedGLST: number   // Short-term G/L
+  unrealizedGLLT: number   // Long-term G/L
+  isLongTerm: boolean       // true if majority of G/L is long-term
   price: number
-  isLongTerm?: boolean   // true = long-term holding, false = short-term
 }
-
-
 
 export interface ImportMatch {
   ticker: string
@@ -26,11 +28,11 @@ export interface ImportMatch {
   currentValue: number
   underweightValue: number
   score: number
-  weight?: number  // for split maps, 0-1
+  weight?: number
 }
 
 export interface AccountData {
-  accountId: string
+  accountId: string         // same as accountNumber
   accountNumber: string
   regType: string
   modelName: string
@@ -40,61 +42,94 @@ export interface AccountData {
 
 export interface ImportResult {
   accounts: AccountData[]
-  modelName: string  // overall model name across all accounts
+  modelName: string
 }
 
 export interface ProcessedHolding {
   holding: ImportHolding
   action: "sell-loss" | "sell-gain" | "map"
-  matches: ImportMatch[]  // 1 for single, 2+ for split
+  matches: ImportMatch[]
   gainConsumed?: number
 }
 
-// ─── Index fingerprinting (same logic as mapper.ts) ───────────────────────────
+// ─── Extract model name from Model Category ───────────────────────────────────
+// "Savvy Strategic 60/40 Fixed Income" → "Savvy Strategic 60/40"
+// "Savvy Strategic 60/40 US Fixed Income" → "Savvy Strategic 60/40"
+function extractModelName(modelCategories: string[]): string {
+  const categories = modelCategories.filter(s => s && s !== "Unassigned" && s !== "Cash")
+  if (!categories.length) return "Unknown Model"
+
+  // Find the common prefix across all non-unassigned categories
+  // Strip trailing asset class words
+  const assetClassSuffixes = [
+    /\s+(US\s+)?Fixed Income$/i,
+    /\s+International\s+Fixed Income$/i,
+    /\s+(US\s+)?Equity$/i,
+    /\s+International\s+Equity$/i,
+    /\s+Sector\s+Equity$/i,
+    /\s+Alternatives$/i,
+    /\s+Fixed\s+Income$/i,
+    /\s+Equity$/i,
+  ]
+
+  const stripped = categories.map(cat => {
+    let s = cat
+    for (const suffix of assetClassSuffixes) {
+      s = s.replace(suffix, "")
+    }
+    return s.trim()
+  })
+
+  // Most common stripped name
+  const counts = new Map<string, number>()
+  stripped.forEach(s => counts.set(s, (counts.get(s) || 0) + 1))
+  let best = ""
+  let bestCount = 0
+  counts.forEach((count, name) => {
+    if (count > bestCount) { best = name; bestCount = count }
+  })
+  return best || categories[0]
+}
+
+// ─── Index fingerprinting ─────────────────────────────────────────────────────
 function indexFingerprint(name: string): string[] {
   const n = name.toLowerCase()
-    .replace(/ishares|vanguard|schwab|spdr|invesco|fidelity|dimensional|avantis|jpmorgan|wisdomtree|first trust|blackrock|pimco|state street|columbia|pacer|global x|franklin|nuveen|abrdn|goldman sachs/gi, "")
-    .replace(/etf|fund|trust|index|portfolio|series/gi, "")
+    .replace(/ishares|vanguard|schwab|spdr|invesco|fidelity|dimensional|avantis|jpmorgan|wisdomtree|first trust|blackrock|pimco|state street|columbia|pacer|global x|franklin|nuveen|abrdn|goldman sachs|janus|thornburg|oakmark|shelton/gi, "")
+    .replace(/etf|fund|trust|index|portfolio|series|instl|adv|institutional/gi, "")
     .trim()
 
   const signals: string[] = []
-  if (/s&p\s*500|sp500/.test(n))            signals.push("sp500")
-  if (/s&p\s*100/.test(n))                   signals.push("sp100")
-  if (/total\s*(stock|market|us)/.test(n))   signals.push("total-us")
-  if (/russell\s*2000|r2000/.test(n))        signals.push("russell2000")
-  if (/russell\s*1000/.test(n))              signals.push("russell1000")
-  if (/nasdaq|qqq/.test(n))                  signals.push("nasdaq100")
-  if (/value/.test(n))                       signals.push("value")
-  if (/growth/.test(n))                      signals.push("growth")
-  if (/equal\s*weight/.test(n))              signals.push("equal-weight")
-  if (/min(imum)?\s*vol|low\s*vol/.test(n))  signals.push("min-vol")
-  if (/momentum/.test(n))                    signals.push("momentum")
-  if (/quality/.test(n))                     signals.push("quality")
-  if (/small[\s-]cap|small\s*co/.test(n))   signals.push("small-cap")
-  if (/mid[\s-]cap/.test(n))                signals.push("mid-cap")
-  if (/large[\s-]cap/.test(n))              signals.push("large-cap")
-  if (/eafe/.test(n))                        signals.push("eafe")
-  if (/ftse\s*dev/.test(n))                 signals.push("ftse-developed")
-  if (/ftse\s*em|emerging/.test(n))          signals.push("emerging")
-  if (/ex[\s-]china/.test(n))               signals.push("ex-china")
-  if (/international|intl/.test(n))          signals.push("international")
-  if (/aggregate|agg/.test(n))              signals.push("aggregate")
-  if (/treasury|govt|government/.test(n))   signals.push("treasury")
-  if (/tips|inflation[\s-]protect/.test(n)) signals.push("tips")
-  if (/high\s*yield|hy/.test(n))            signals.push("high-yield")
-  if (/muni|municipal/.test(n))             signals.push("muni")
+  if (/s&p\s*500|sp500/.test(n))             signals.push("sp500")
+  if (/total\s*(stock|market|us)/.test(n))    signals.push("total-us")
+  if (/russell\s*2000/.test(n))               signals.push("russell2000")
+  if (/nasdaq|qqq/.test(n))                   signals.push("nasdaq100")
+  if (/value/.test(n))                        signals.push("value")
+  if (/growth/.test(n))                       signals.push("growth")
+  if (/equal\s*weight/.test(n))               signals.push("equal-weight")
+  if (/momentum/.test(n))                     signals.push("momentum")
+  if (/quality/.test(n))                      signals.push("quality")
+  if (/small[\s-]cap/.test(n))               signals.push("small-cap")
+  if (/eafe/.test(n))                         signals.push("eafe")
+  if (/emerging/.test(n))                     signals.push("emerging")
+  if (/ex[\s-]china/.test(n))                signals.push("ex-china")
+  if (/international|intl/.test(n))           signals.push("international")
+  if (/aggregate|agg/.test(n))               signals.push("aggregate")
+  if (/treasury|govt/.test(n))               signals.push("treasury")
+  if (/tips|inflation/.test(n))              signals.push("tips")
+  if (/high\s*yield/.test(n))                signals.push("high-yield")
+  if (/muni|municipal/.test(n))              signals.push("muni")
   if (/mortgage|mbs/.test(n))               signals.push("mbs")
-  if (/short[\s-]term|1[\s-]3|0[\s-]3/.test(n)) signals.push("short-term")
-  if (/long[\s-]term|20\+|10[\s-]20/.test(n))   signals.push("long-term")
+  if (/short[\s-]term/.test(n))             signals.push("short-term")
+  if (/long[\s-]term|10[\s-]20|20\+/.test(n)) signals.push("long-term")
   if (/intermediate/.test(n))               signals.push("intermediate")
-  if (/convertible/.test(n))                signals.push("convertible")
+  if (/convertible/.test(n))               signals.push("convertible")
   if (/gold/.test(n))                       signals.push("commodity-gold")
-  if (/commodity|commodit/.test(n))         signals.push("commodity-broad")
-  if (/real\s*estate|reit/.test(n))         signals.push("real-estate")
-  if (/dividend/.test(n))                   signals.push("dividend")
-  if (/cyber|security/.test(n))             signals.push("cyber")
+  if (/commodity/.test(n))                  signals.push("commodity-broad")
+  if (/technology|tech/.test(n))            signals.push("sector-tech")
   if (/defense|aerospace/.test(n))          signals.push("defense")
-  if (/technology|tech/.test(n))            signals.push("tech")
+  if (/dividend/.test(n))                   signals.push("dividend")
+  if (/core/.test(n))                       signals.push("core")
+  if (/sector/.test(n))                     signals.push("sector")
   return signals
 }
 
@@ -103,71 +138,46 @@ function fingerprintOverlap(a: string[], b: string[]): number {
   return b.filter(x => setA.has(x)).length
 }
 
-// ─── Broad asset class grouping ───────────────────────────────────────────────
 function broadClass(category: string, productClass: string): string {
   const cat = (category + " " + productClass).toLowerCase()
   if (cat.includes("emerging")) return "emerging"
   if (isGlobal(category, productClass)) return "global"
-  if (cat.includes("international") || cat.includes("foreign") || cat.includes("eafe") || cat.includes("europe")) return "intl-developed"
-  if (cat.includes("bond") || cat.includes("fixed") || cat.includes("muni") || cat.includes("treasury") || cat.includes("securitized")) return "fixed-income"
-  if (cat.includes("real estate") || cat.includes("reit")) return "real-estate"
-  if (cat.includes("commodity") || cat.includes("gold")) return "commodity"
+  if (cat.includes("international") || cat.includes("foreign") || cat.includes("eafe")) return "intl-developed"
+  if (cat.includes("bond") || cat.includes("fixed") || cat.includes("muni") || cat.includes("treasury") ||
+      cat.includes("securitized") || cat.includes("mortgage") || cat.includes("taxable bonds") ||
+      cat.includes("government") || cat.includes("high yield bond")) return "fixed-income"
+  if (cat.includes("real estate") || cat.includes("commodity") || cat.includes("gold") || cat.includes("alternative")) return "real-assets"
+  if (cat.includes("sector") || cat.includes("technology") || cat.includes("industrials")) return "sector"
   if (cat.includes("small")) return "us-small"
   if (cat.includes("mid")) return "us-mid"
   return "us-equity"
 }
 
-// Detect global funds — those with exposure across US + Intl + EM
 function isGlobal(category: string, productClass: string): boolean {
   const cat = (category + " " + productClass).toLowerCase()
-  return (
-    cat.includes("global large") ||
-    cat.includes("global stock") ||
-    cat.includes("global equity") ||
-    cat.includes("global blend") ||
-    cat.includes("global growth") ||
-    cat.includes("global value") ||
-    cat.includes("world large") ||
-    cat.includes("world stock") ||
-    cat.includes("world equity") ||
-    (cat.includes("global") && (cat.includes("equity") || cat.includes("stock") || cat.includes("large") || cat.includes("blend")))
-  )
+  return cat.includes("global large") || cat.includes("global stock") || cat.includes("global equity") ||
+    cat.includes("world large") || cat.includes("world stock") ||
+    (cat.includes("global") && (cat.includes("equity") || cat.includes("stock") || cat.includes("blend")))
 }
 
-// ─── Score a model holding as a match for an unassigned holding ───────────────
-function scoreCandidate(
-  holding: ImportHolding,
-  candidate: ImportHolding,
-  maxUnderweight: number
-): number {
+function scoreCandidate(holding: ImportHolding, candidate: ImportHolding, maxUnderweight: number): number {
   let score = 0
-
-  // 1. Name fingerprint overlap (0-10 pts)
   const hFp = indexFingerprint(holding.name)
   const cFp = indexFingerprint(candidate.name)
   score += fingerprintOverlap(hFp, cFp) * 2
-
-  // 2. Exact category match (5 pts)
   if (holding.msCategory.toLowerCase() === candidate.msCategory.toLowerCase()) score += 5
-
-  // 3. Broad class match (3 pts)
   if (broadClass(holding.msCategory, holding.productClass) === broadClass(candidate.msCategory, candidate.productClass)) score += 3
-
-  // 4. Allocation need — how underweight is the model holding (0-4 pts)
   const underweight = Math.max(0, candidate.targetValue - candidate.currentValue)
   if (maxUnderweight > 0) score += (underweight / maxUnderweight) * 4
-
   return score
 }
 
-// ─── Find best matches for an unassigned holding ──────────────────────────────
-function findMatches(holding: ImportHolding, inModel: ImportHolding[]): ImportMatch[] {
+export function findMatches(holding: ImportHolding, inModel: ImportHolding[]): ImportMatch[] {
   if (!inModel.length) return []
-
   const maxUnderweight = Math.max(...inModel.map(m => Math.max(0, m.targetValue - m.currentValue)))
   const holdingBroadClass = broadClass(holding.msCategory, holding.productClass)
 
-  // ── Global fund: map to US + EAFE + EM candidates ─────────────────────────
+  // Global fund → split across US + EAFE + EM
   if (holdingBroadClass === "global") {
     const globalScored = inModel.map(candidate => ({
       candidate,
@@ -175,71 +185,41 @@ function findMatches(holding: ImportHolding, inModel: ImportHolding[]): ImportMa
       underweightValue: Math.max(0, candidate.targetValue - candidate.currentValue),
       broadClass: broadClass(candidate.msCategory, candidate.productClass),
     }))
-
-    // Find best candidate per geographic bucket
-    const usMatch    = globalScored.filter(s => s.broadClass === "us-equity" || s.broadClass === "us-small" || s.broadClass === "us-mid").sort((a,b) => b.score - a.score)[0]
-    const eafeMatch  = globalScored.filter(s => s.broadClass === "intl-developed").sort((a,b) => b.score - a.score)[0]
-    const emMatch    = globalScored.filter(s => s.broadClass === "emerging").sort((a,b) => b.score - a.score)[0]
-
+    const usMatch   = globalScored.filter(s => s.broadClass === "us-equity" || s.broadClass === "us-small" || s.broadClass === "us-mid").sort((a,b) => b.score - a.score)[0]
+    const eafeMatch = globalScored.filter(s => s.broadClass === "intl-developed").sort((a,b) => b.score - a.score)[0]
+    const emMatch   = globalScored.filter(s => s.broadClass === "emerging").sort((a,b) => b.score - a.score)[0]
     const globalMatches = [usMatch, eafeMatch, emMatch].filter(Boolean)
     if (globalMatches.length > 0) {
       const totalUnderweight = globalMatches.reduce((s, m) => s + m!.underweightValue, 0)
       return globalMatches.map(m => ({
-        ticker: m!.candidate.ticker,
-        name: m!.candidate.name,
-        msCategory: m!.candidate.msCategory,
-        targetValue: m!.candidate.targetValue,
-        currentValue: m!.candidate.currentValue,
-        underweightValue: m!.underweightValue,
-        score: m!.score,
+        ticker: m!.candidate.ticker, name: m!.candidate.name, msCategory: m!.candidate.msCategory,
+        targetValue: m!.candidate.targetValue, currentValue: m!.candidate.currentValue,
+        underweightValue: m!.underweightValue, score: m!.score,
         weight: totalUnderweight > 0 ? m!.underweightValue / totalUnderweight : 1 / globalMatches.length,
       }))
     }
   }
 
-  // ── Standard matching ──────────────────────────────────────────────────────
+  // Standard matching
   const scored = inModel.map(candidate => ({
-    candidate,
-    score: scoreCandidate(holding, candidate, maxUnderweight),
+    candidate, score: scoreCandidate(holding, candidate, maxUnderweight),
     underweightValue: Math.max(0, candidate.targetValue - candidate.currentValue),
     broadClass: broadClass(candidate.msCategory, candidate.productClass),
   })).sort((a, b) => b.score - a.score)
 
   const top = scored[0]
   if (!top || top.score === 0) return []
-
-  // Check if second candidate is a strong match AND covers different exposure
   const second = scored[1]
-  const shouldSplit =
-    second &&
-    second.score >= top.score * 0.7 &&
-    second.broadClass !== top.broadClass &&
-    holdingBroadClass !== top.broadClass
-
+  const shouldSplit = second && second.score >= top.score * 0.7 &&
+    second.broadClass !== top.broadClass && holdingBroadClass !== top.broadClass
   const toMatch = shouldSplit ? [top, second] : [top]
   const totalUnderweight = toMatch.reduce((s, m) => s + m.underweightValue, 0)
-
   return toMatch.map(m => ({
-    ticker: m.candidate.ticker,
-    name: m.candidate.name,
-    msCategory: m.candidate.msCategory,
-    targetValue: m.candidate.targetValue,
-    currentValue: m.candidate.currentValue,
-    underweightValue: m.underweightValue,
-    score: m.score,
-    weight: toMatch.length > 1
-      ? (totalUnderweight > 0 ? m.underweightValue / totalUnderweight : 1 / toMatch.length)
-      : undefined,
+    ticker: m.candidate.ticker, name: m.candidate.name, msCategory: m.candidate.msCategory,
+    targetValue: m.candidate.targetValue, currentValue: m.candidate.currentValue,
+    underweightValue: m.underweightValue, score: m.score,
+    weight: toMatch.length > 1 ? (totalUnderweight > 0 ? m.underweightValue / totalUnderweight : 0.5) : undefined,
   }))
-}
-
-// ─── Infer model name ─────────────────────────────────────────────────────────
-function inferModelName(secSets: string[]): string {
-  const unique = Array.from(new Set(secSets.filter(s => s && s !== "Unassigned" && s !== "Cash")))
-  if (!unique.length) return "Unknown Model"
-  const prefixes = unique.map(s => s.split(" - ")[0].trim())
-  const uniquePrefixes = Array.from(new Set(prefixes))
-  return uniquePrefixes.length === 1 ? uniquePrefixes[0] : uniquePrefixes.join(" / ")
 }
 
 // ─── Parse Excel ──────────────────────────────────────────────────────────────
@@ -251,7 +231,7 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
 
   const holdingRows = XLSX.utils.sheet_to_json<Record<string, string | number>>(holdingSheet, { defval: "" })
 
-  // Target values from Asset Classification sheet (shared across accounts)
+  // Target values from Asset Classification sheet
   const assetSheet = wb.Sheets["Asset Classification"]
   const targetMap = new Map<string, { targetValue: number; targetPct: number }>()
   if (assetSheet) {
@@ -265,10 +245,22 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
     })
   }
 
-  // Group holdings by Account ID
+  // Reg types from Account and Cash Details
+  const regTypeMap = new Map<string, string>()
+  const cashSheet = wb.Sheets["Account and Cash Details"]
+  if (cashSheet) {
+    const cashRows = XLSX.utils.sheet_to_json<Record<string, string | number>>(cashSheet, { defval: "" })
+    cashRows.forEach(row => {
+      const acct = String(row["Account Number"] || "").trim()
+      const reg = String(row["Reg Type"] || row["Registration Type"] || "").trim()
+      if (acct) regTypeMap.set(acct, reg)
+    })
+  }
+
+  // Group by Account Number
   const accountMap = new Map<string, {
     accountNumber: string
-    secSets: string[]
+    modelCategories: string[]
     inModel: ImportHolding[]
     unassigned: ImportHolding[]
   }>()
@@ -277,60 +269,50 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
     const ticker = String(row["Ticker"] || "").trim().toUpperCase()
     if (!ticker || ticker === "CUSTODIAL_CASH") return
 
-    const accountId     = String(row["Account ID"] || "").trim()
     const accountNumber = String(row["Account Number"] || "").trim()
     const secSet        = String(row["Sec. Set"] || "").trim()
     const msCategory    = String(row["Product Sub-Class"] || "").trim()
     const productClass  = String(row["Product Class"] || "").trim()
+    const modelCategory = String(row["Model Category"] || "").trim()
+    const modelClass    = String(row["Model Class"] || "").trim()
+    const name          = String(row["Security Name"] || ticker).trim()
     const currentValue  = parseFloat(String(row["Current $"] || "0")) || 0
     const currentShares = parseFloat(String(row["Current Shares"] || "0")) || 0
     const price         = parseFloat(String(row["Price"] || "0")) || 0
     const unrealizedGL  = parseFloat(String(row["Unrealized G/L $"] || "0")) || 0
     const unrealizedGLPct = parseFloat(String(row["Unrealized G/L %"] || "0")) || 0
-    const name          = String(row["Security Name"] || ticker).trim()
-    const holdingPeriod = String(row["Holding Period"] || row["Term"] || "").toLowerCase()
-    const isLongTerm    = holdingPeriod ? holdingPeriod.includes("long") : true
+    const unrealizedGLST  = parseFloat(String(row["Unrealized G/L ST $"] || "0")) || 0
+    const unrealizedGLLT  = parseFloat(String(row["Unrealized G/L LT $"] || "0")) || 0
+    const isLongTerm    = Math.abs(unrealizedGLLT) >= Math.abs(unrealizedGLST)
     const target        = targetMap.get(ticker) || { targetValue: 0, targetPct: 0 }
 
-    if (!accountMap.has(accountId)) {
-      accountMap.set(accountId, { accountNumber, secSets: [], inModel: [], unassigned: [] })
+    if (!accountMap.has(accountNumber)) {
+      accountMap.set(accountNumber, { accountNumber, modelCategories: [], inModel: [], unassigned: [] })
     }
-    const acct = accountMap.get(accountId)!
-    acct.secSets.push(secSet)
+    const acct = accountMap.get(accountNumber)!
+    if (modelCategory && modelCategory !== "Unassigned" && modelCategory !== "Cash") {
+      acct.modelCategories.push(modelCategory)
+    }
 
     const holding: ImportHolding = {
-      ticker, name, secSet, msCategory, productClass,
+      ticker, name, secSet, msCategory, productClass, modelCategory, modelClass,
       currentValue, currentShares, price,
-      unrealizedGL, unrealizedGLPct,
-      targetValue: target.targetValue,
-      targetPct: target.targetPct,
-      isLongTerm,
+      unrealizedGL, unrealizedGLPct, unrealizedGLST, unrealizedGLLT, isLongTerm,
+      targetValue: target.targetValue, targetPct: target.targetPct,
     }
 
     if (secSet === "Unassigned") acct.unassigned.push(holding)
     else if (secSet !== "Cash") acct.inModel.push(holding)
   })
 
-  const allSecSets = Array.from(accountMap.values()).flatMap(a => a.secSets)
-  const overallModelName = inferModelName(allSecSets)
+  const allModelCategories = Array.from(accountMap.values()).flatMap(a => a.modelCategories)
+  const overallModelName = extractModelName(allModelCategories)
 
-  // Read reg type from Account and Cash Details
-  const regTypeMap = new Map<string, string>()
-  const cashSheet2 = wb.Sheets["Account and Cash Details"]
-  if (cashSheet2) {
-    const cashRows2 = XLSX.utils.sheet_to_json<Record<string, string | number>>(cashSheet2, { defval: "" })
-    cashRows2.forEach(row => {
-      const id = String(row["Account ID"] || "").trim()
-      const reg = String(row["Registration Type"] || row["Reg Type"] || row["Account Type"] || "").trim()
-      if (id) regTypeMap.set(id, reg)
-    })
-  }
-
-  const accounts: AccountData[] = Array.from(accountMap.entries()).map(([accountId, data]) => ({
-    accountId,
-    accountNumber: data.accountNumber,
-    regType: regTypeMap.get(accountId) || "",
-    modelName: inferModelName(data.secSets),
+  const accounts: AccountData[] = Array.from(accountMap.entries()).map(([accountNumber, data]) => ({
+    accountId: accountNumber,
+    accountNumber,
+    regType: regTypeMap.get(accountNumber) || "",
+    modelName: extractModelName(data.modelCategories),
     inModel: data.inModel,
     unassigned: data.unassigned,
   }))
@@ -343,26 +325,20 @@ export function processWithBudget(account: AccountData, gainsBudget: number | nu
   const { unassigned, inModel } = account
   const processed: ProcessedHolding[] = []
 
-  // Losses always sell first — no mapping needed
-  const losses = unassigned.filter(h => h.unrealizedGL <= 0)
+  const losses  = unassigned.filter(h => h.unrealizedGL <= 0)
+  const gains   = unassigned.filter(h => h.unrealizedGL > 0).sort((a, b) => a.unrealizedGL - b.unrealizedGL)
+
   losses.forEach(h => processed.push({ holding: h, action: "sell-loss", matches: [] }))
 
-  // Sort gains lowest to highest
-  const gains = unassigned.filter(h => h.unrealizedGL > 0).sort((a, b) => a.unrealizedGL - b.unrealizedGL)
-
   if (gainsBudget === null || gainsBudget <= 0) {
-    // No budget — map everything
     gains.forEach(h => {
       const matches = findMatches(h, inModel)
       processed.push({ holding: h, action: "map", matches })
     })
   } else {
-    // Budget entered — sell gains from lowest first until budget consumed, map the rest
-    // Net losses offset the budget
     const totalLosses = losses.reduce((sum, h) => sum + Math.abs(h.unrealizedGL), 0)
     const effectiveBudget = gainsBudget + totalLosses
     let budgetUsed = 0
-
     gains.forEach(h => {
       if (budgetUsed + h.unrealizedGL <= effectiveBudget) {
         budgetUsed += h.unrealizedGL
@@ -379,11 +355,13 @@ export function processWithBudget(account: AccountData, gainsBudget: number | nu
 }
 
 // ─── Export CSV ───────────────────────────────────────────────────────────────
-export function exportImportCSV(processed: ProcessedHolding[], accountId: string): string {
+export function exportImportCSV(processedAccounts: { accountId: string; processed: ProcessedHolding[] }[]): string {
   const rows = [["Account ID", "Targeted", "Equivalent", "Equivalent Buy Priority", "Equivalent Sell Priority", "Delete"]]
-  processed.filter(p => p.action === "map" && p.matches.length > 0).forEach(p => {
-    p.matches.forEach(m => {
-      rows.push([accountId, m.ticker, p.holding.ticker, "Do Not Buy", "Default", ""])
+  processedAccounts.forEach(({ accountId, processed }) => {
+    processed.filter(p => (p.action === "map" || p.action === "sell-gain") && p.matches.length > 0).forEach(p => {
+      p.matches.forEach(m => {
+        rows.push([accountId, m.ticker, p.holding.ticker, "Do Not Buy", "Default", ""])
+      })
     })
   })
   return rows.map(r => r.map(c => `"${c}"`).join(",")).join("\n")
