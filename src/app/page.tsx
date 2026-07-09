@@ -203,7 +203,7 @@ function exportTransitionPDF(transition: import("@/lib/transitionEngine").Transi
 
 // ─── Main component ────────────────────────────────────────────────────────────
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"manual" | "import">("manual")
+const [activeTab, setActiveTab] = useState<"manual" | "import" | "transition">("import")
 
   // Shared data
   const [msData, setMsData] = useState<MorningstarRow[]>([])
