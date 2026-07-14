@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { MODELS } from "@/lib/types"
 import type { ModelId, MappedSecurity, MorningstarRow, ModelUniverseRow } from "@/lib/types"
 import type { ImportResult, AccountData, ProcessedHolding } from "@/lib/importParser"
-import type { TransitionSummary, TradeRow } from "@/lib/transitionEngine"
+import type { TransitionSummary, TradeRow, AssetClassGroup } from "@/lib/transitionEngine"
 
 // ─── Status config ─────────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
@@ -187,6 +187,7 @@ export default function Home() {
   const [transitionBudget, setTransitionBudget] = useState("")
   const [editedTrades, setEditedTrades] = useState<TradeRow[]>([])
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set())
+  const [expandedAssetClasses, setExpandedAssetClasses] = useState<Set<string>>(new Set())
   const transitionFileRef = useRef<HTMLInputElement>(null)
   const [transitionFile, setTransitionFile] = useState<File | null>(null)
 
@@ -266,6 +267,7 @@ export default function Home() {
       setEditedTrades(data.transition.trades)
       const classes = new Set<string>(data.transition.trades.map((t: TradeRow) => t.assetClass))
       setExpandedClasses(classes)
+      setExpandedAssetClasses(new Set<string>(data.transition.assetGroups?.map((g: AssetClassGroup) => g.assetClass) || []))
     } catch (e) { setTransitionError(String(e)) }
     finally { setTransitionLoading(false) }
   }
@@ -285,6 +287,7 @@ export default function Home() {
       setEditedTrades(data.transition.trades)
       const classes = new Set<string>(data.transition.trades.map((t: TradeRow) => t.assetClass))
       setExpandedClasses(classes)
+      setExpandedAssetClasses(new Set<string>(data.transition.assetGroups?.map((g: AssetClassGroup) => g.assetClass) || []))
     } catch (e) { setTransitionError(String(e)) }
     finally { setTransitionLoading(false) }
   }
@@ -296,7 +299,7 @@ export default function Home() {
       if (field === "realizedGL") {
         const gl = Number(value)
         updated.estimatedTax = gl > 0
-          ? (updated.realizedGLLT > 0 ? updated.realizedGLLT * 0.20 : 0) + (updated.realizedGLST > 0 ? updated.realizedGLST * 0.37 : 0)
+          ? (updated.realizedGLLT > 0 ? updated.realizedGLLT * 0.238 : 0) + (updated.realizedGLST > 0 ? updated.realizedGLST * 0.408 : 0)
           : 0
       }
       return updated
@@ -798,16 +801,16 @@ export default function Home() {
               )}
             </div>
 
-            {/* Right panel */}
+            {/* Right panel — asset class grouped view */}
             <div className="fade-up-2">
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, minHeight: 36 }}>
                 <span style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "var(--ink)" }}>
-                  {transition ? `${editedTrades.length} Trades` : "Transition Analysis"}
+                  {transition ? transition.modelName : "Transition Analysis"}
                 </span>
                 {transition && (
                   <div style={{ display: "flex", gap: 8 }}>
-                    <Chip label={`${editedTrades.filter(t => t.tradeType === "buy").length} buys`} color="#00f0c0" bg="#001e18" glow="#00f0c0" />
-                    <Chip label={`${editedTrades.filter(t => t.tradeType === "sell").length} sells`} color="#ff4488" bg="#1e0018" glow="#ff4488" />
+                    <Chip label={`${transition.numTrades} trades`} color="#00f0c0" bg="#001e18" glow="#00f0c0" />
+                    <Chip label={`${fmt$(transition.estimatedTax)} est. tax`} color="#ffaa00" bg="#1e0800" glow="#ffaa00" />
                     <button onClick={() => exportTransitionPDF(transition, editedTrades, clientName)}
                       style={{ padding: "3px 12px", background: "rgba(0,200,255,0.08)", color: "var(--accent)", border: "1px solid rgba(0,200,255,0.25)", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-mono)" }}>
                       Export PDF
@@ -820,73 +823,173 @@ export default function Home() {
               {transitionLoading && <Skeleton />}
               {transitionError && <div style={{ padding: "14px 18px", background: "var(--red-light)", color: "var(--red)", borderRadius: 10, border: "1px solid #ff448833", fontSize: 13 }}>⚠ {transitionError}</div>}
 
-              {transition && !transitionLoading && (() => {
-                const assetClasses = Array.from(new Set(editedTrades.map(t => t.assetClass)))
-                return (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {assetClasses.map(ac => {
-                      const classTrades = editedTrades.filter(t => t.assetClass === ac)
-                      const isExpanded = expandedClasses.has(ac)
-                      const classTradeAmt = classTrades.reduce((s, t) => s + t.tradeAmount, 0)
-                      const classGL = classTrades.reduce((s, t) => s + t.realizedGL, 0)
-                      const classTax = classTrades.reduce((s, t) => s + t.estimatedTax, 0)
-                      return (
-                        <div key={ac} style={{ background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
-                          <div onClick={() => toggleClass(ac)}
-                            style={{ display: "grid", gridTemplateColumns: "1fr 100px 90px 90px 30px", padding: "12px 16px", gap: 10, alignItems: "center", cursor: "pointer", borderBottom: isExpanded ? "1px solid var(--border)" : "none" }}
-                            onMouseEnter={e => (e.currentTarget.style.background = "rgba(0,200,255,0.03)")}
-                            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>{ac}</span>
-                            <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: classTradeAmt >= 0 ? "#00f0c0" : "#ff4488", textAlign: "right" }}>{classTradeAmt >= 0 ? "+" : ""}{fmt$(classTradeAmt)}</span>
-                            <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: classGL !== 0 ? (classGL > 0 ? "#00f0c0" : "#ff4488") : "var(--ink-faint)", textAlign: "right" }}>{classGL !== 0 ? fmt$(classGL) : "—"}</span>
-                            <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: classTax > 0 ? "#ffaa00" : "var(--ink-faint)", textAlign: "right" }}>{classTax > 0 ? fmt$(classTax) : "—"}</span>
-                            <span style={{ fontSize: 14, color: "var(--ink-faint)", textAlign: "center" }}>{isExpanded ? "▼" : "▶"}</span>
-                          </div>
-                          {isExpanded && (
-                            <div style={{ padding: "6px 16px", background: "var(--surface-sunken)", display: "grid", gridTemplateColumns: "30px 80px 1fr 1fr 100px 90px 90px", gap: 8, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>
-                              <span></span><span>Type</span><span>Sell</span><span>Buy / Target</span><span style={{ textAlign: "right" }}>Trade $</span><span style={{ textAlign: "right" }}>G/L</span><span style={{ textAlign: "right" }}>Est. Tax</span>
-                            </div>
-                          )}
-                          {isExpanded && classTrades.map((trade, idx) => {
-                            const isBuy = trade.tradeType === "buy"
-                            const dotColor = isBuy ? "#00f0c0" : "#ff4488"
-                            return (
-                              <div key={trade.id} style={{ display: "grid", gridTemplateColumns: "30px 80px 1fr 1fr 100px 90px 90px", padding: "10px 16px", gap: 8, alignItems: "center", borderTop: "1px solid var(--border)", background: idx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
-                                <span style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor, boxShadow: `0 0 4px ${dotColor}`, display: "inline-block" }} />
-                                <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: isBuy ? "#001e18" : "#1e0018", color: dotColor, fontWeight: 700, border: `1px solid ${dotColor}33`, whiteSpace: "nowrap" }}>
-                                  {isBuy ? "Buy" : trade.isKeep ? "Rebal" : "Sell"}
-                                </span>
-                                <div>
-                                  {!isBuy && (
-                                    <>
-                                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "#ff4488" }}>{trade.ticker}</span>
-                                      <div style={{ fontSize: 10, color: "var(--ink-faint)", marginTop: 1 }}>{trade.securityName.length > 32 ? trade.securityName.slice(0,30) + "…" : trade.securityName}</div>
-                                    </>
-                                  )}
-                                </div>
-                                <div>
-                                  {isBuy ? (
-                                    <div>
-                                      <input value={trade.ticker} onChange={e => updateTrade(trade.id, "ticker", e.target.value.toUpperCase())}
-                                        style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "var(--accent)", background: "transparent", border: "none", borderBottom: "1px dashed rgba(0,200,255,0.4)", outline: "none", width: 80, textShadow: "0 0 10px rgba(0,200,255,0.3)" }} />
-                                      <div style={{ fontSize: 10, color: "var(--ink-faint)", marginTop: 1 }}>{trade.securityName.length > 32 ? trade.securityName.slice(0,30) + "…" : trade.securityName}</div>
-                                    </div>
-                                  ) : (
-                                    trade.mappedTicker && <span style={{ fontSize: 10, color: "var(--ink-faint)", fontStyle: "italic" }}>→ <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)" }}>{trade.mappedTicker}</span></span>
-                                  )}
-                                </div>
-                                <div style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: isBuy ? "#00f0c0" : "#ff4488" }}>{isBuy ? "+" : ""}{fmt$(Math.abs(trade.tradeAmount))}</div>
-                                <div style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: trade.realizedGL < 0 ? "#ff4488" : trade.realizedGL > 0 ? "#00f0c0" : "var(--ink-faint)" }}>{trade.realizedGL !== 0 ? fmt$(trade.realizedGL) : "—"}</div>
-                                <div style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: trade.estimatedTax > 0 ? "#ffaa00" : "var(--ink-faint)" }}>{trade.estimatedTax > 0 ? fmt$(trade.estimatedTax) : "—"}</div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )
-                    })}
+              {transition && !transitionLoading && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {/* Column headers */}
+                  <div style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 90px 90px 70px 70px 70px", padding: "6px 14px", gap: 8, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>
+                    <span></span>
+                    <span>Class / Security</span>
+                    <span style={{ textAlign: "right" }}>Trade $</span>
+                    <span style={{ textAlign: "right" }}>Current $</span>
+                    <span style={{ textAlign: "right" }}>Target $</span>
+                    <span style={{ textAlign: "right" }}>Cur %</span>
+                    <span style={{ textAlign: "right" }}>Tgt %</span>
+                    <span style={{ textAlign: "right" }}>Post %</span>
                   </div>
-                )
-              })()}
+
+                  {(transition.assetGroups || []).map(group => {
+                    const isExpanded = expandedAssetClasses.has(group.assetClass)
+                    const tradeDiff = group.tradeAmount
+                    const diffFromTarget = group.postTradeValue - group.targetValue
+
+                    return (
+                      <div key={group.assetClass} style={{ background: "var(--surface-raised)", border: `1px solid ${group.inTolerance ? "var(--border)" : "#ff448844"}`, borderRadius: 10, overflow: "hidden" }}>
+                        {/* Asset class row */}
+                        <div
+                          onClick={() => setExpandedAssetClasses(prev => { const next = new Set(prev); if (next.has(group.assetClass)) next.delete(group.assetClass); else next.add(group.assetClass); return next })}
+                          style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 90px 90px 70px 70px 70px", padding: "12px 14px", gap: 8, alignItems: "center", cursor: "pointer", background: group.inTolerance ? "transparent" : "rgba(255,68,136,0.04)" }}
+                          onMouseEnter={e => (e.currentTarget.style.background = group.inTolerance ? "rgba(0,200,255,0.03)" : "rgba(255,68,136,0.06)")}
+                          onMouseLeave={e => (e.currentTarget.style.background = group.inTolerance ? "transparent" : "rgba(255,68,136,0.04)")}
+                        >
+                          {/* Tolerance indicator */}
+                          <span style={{ fontSize: 14, color: group.inTolerance ? "#00f0c0" : "#ff4488" }}>
+                            {group.inTolerance ? "✓" : "✗"}
+                          </span>
+
+                          {/* Class name + expand arrow */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--ink)" }}>{group.assetClass}</span>
+                            <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>{isExpanded ? "▼" : "▶"}</span>
+                          </div>
+
+                          {/* Trade $ */}
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: tradeDiff > 0 ? "#00f0c0" : tradeDiff < 0 ? "#ff4488" : "var(--ink-faint)" }}>
+                            {tradeDiff !== 0 ? `${tradeDiff > 0 ? "+" : ""}${fmt$(tradeDiff)}` : "—"}
+                          </span>
+
+                          {/* Current $ */}
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-muted)" }}>{fmt$(group.currentValue)}</span>
+
+                          {/* Target $ */}
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-muted)" }}>{fmt$(group.targetValue)}</span>
+
+                          {/* Current % */}
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{(group.currentPct * 100).toFixed(1)}%</span>
+
+                          {/* Target % */}
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{(group.targetPct * 100).toFixed(1)}%</span>
+
+                          {/* Post % */}
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: group.inTolerance ? "#00f0c0" : "#ff4488" }}>
+                            {(group.postTradePct * 100).toFixed(1)}%
+                          </span>
+                        </div>
+
+                        {/* Expanded holdings */}
+                        {isExpanded && (
+                          <div style={{ borderTop: "1px solid var(--border)" }}>
+                            {/* Trades for this asset class */}
+                            {editedTrades.filter(t => t.assetClass === group.assetClass && !t.isEquivalent).map((trade, idx) => {
+                              const isBuy = trade.tradeType === "buy"
+                              const isSell = trade.tradeType === "sell"
+                              const dotColor = isBuy ? "#00f0c0" : isSell ? "#ff4488" : "#4488ff"
+                              const effectiveAmount = trade.editTradeAmount ?? trade.tradeAmount
+
+                              return (
+                                <div key={trade.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 90px 90px 70px 70px 70px", padding: "9px 14px", gap: 8, alignItems: "center", borderBottom: "1px solid var(--border)", background: idx % 2 === 0 ? "var(--surface-sunken)" : "transparent" }}>
+                                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor, boxShadow: `0 0 4px ${dotColor}`, display: "inline-block", margin: "0 auto" }} />
+
+                                  <div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: isBuy ? "var(--accent)" : "#ff4488" }}>
+                                        {/* Editable ticker for buys */}
+                                        {isBuy ? (
+                                          <input value={trade.ticker}
+                                            onChange={e => updateTrade(trade.id, "ticker", e.target.value.toUpperCase())}
+                                            style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "var(--accent)", background: "transparent", border: "none", borderBottom: "1px dashed rgba(0,200,255,0.4)", outline: "none", width: 70 }} />
+                                        ) : trade.ticker}
+                                      </span>
+                                      <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 20, background: isBuy ? "#001e18" : "#1e0018", color: dotColor, fontWeight: 700, border: `1px solid ${dotColor}33` }}>
+                                        {/* Editable buy/sell toggle */}
+                                        <select value={trade.tradeType}
+                                          onChange={e => updateTrade(trade.id, "tradeType", e.target.value)}
+                                          style={{ background: "transparent", border: "none", color: dotColor, fontWeight: 700, fontSize: 10, cursor: "pointer", outline: "none" }}>
+                                          <option value="buy">Buy</option>
+                                          <option value="sell">Sell</option>
+                                        </select>
+                                      </span>
+                                      {trade.isKeep && <span style={{ fontSize: 10, color: "var(--ink-faint)" }}>rebal</span>}
+                                    </div>
+                                    <div style={{ fontSize: 10, color: "var(--ink-faint)", marginTop: 2 }}>
+                                      {trade.securityName.length > 36 ? trade.securityName.slice(0,34) + "…" : trade.securityName}
+                                    </div>
+                                  </div>
+
+                                  {/* Editable trade amount */}
+                                  <div style={{ textAlign: "right" }}>
+                                    <input
+                                      value={Math.abs(effectiveAmount).toFixed(0)}
+                                      onChange={e => {
+                                        const val = parseFloat(e.target.value) || 0
+                                        updateTrade(trade.id, "editTradeAmount", isSell ? -val : val)
+                                      }}
+                                      style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: isBuy ? "#00f0c0" : "#ff4488", background: "transparent", border: "none", borderBottom: "1px dashed rgba(255,255,255,0.15)", outline: "none", width: 80, textAlign: "right" }}
+                                    />
+                                  </div>
+
+                                  {/* Current $ */}
+                                  <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{fmt$(trade.currentValue)}</span>
+
+                                  {/* Target $ */}
+                                  <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{trade.targetValue > 0 ? fmt$(trade.targetValue) : "—"}</span>
+
+                                  {/* Current % */}
+                                  <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>
+                                    {group.totalValue > 0 ? ((trade.currentValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}
+                                  </span>
+
+                                  {/* Target % */}
+                                  <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>
+                                    {group.totalValue > 0 && trade.targetValue > 0 ? ((trade.targetValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}
+                                  </span>
+
+                                  {/* G/L */}
+                                  <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: trade.realizedGL < 0 ? "#ff4488" : trade.realizedGL > 0 ? "#00f0c0" : "var(--ink-faint)" }}>
+                                    {trade.realizedGL !== 0 ? fmt$(trade.realizedGL) : "—"}
+                                  </span>
+                                </div>
+                              )
+                            })}
+
+                            {/* Equivalent holdings */}
+                            {editedTrades.filter(t => t.isEquivalent && t.assetClass === group.assetClass).map((trade, idx) => (
+                              <div key={trade.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 90px 90px 70px 70px 70px", padding: "8px 14px", gap: 8, alignItems: "center", borderBottom: "1px solid var(--border)", background: "rgba(68,136,255,0.03)" }}>
+                                <span style={{ fontSize: 12, color: "#4488ff", textAlign: "center" }}>≈</span>
+                                <div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "#4488ff" }}>{trade.ticker}</span>
+                                    <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 20, background: "#001030", color: "#4488ff", fontWeight: 700, border: "1px solid #4488ff33" }}>Equiv</span>
+                                    {trade.mappedTicker && <span style={{ fontSize: 10, color: "var(--ink-faint)" }}>of {trade.mappedTicker}</span>}
+                                  </div>
+                                  <div style={{ fontSize: 10, color: "var(--ink-faint)", marginTop: 2 }}>{trade.securityName.length > 36 ? trade.securityName.slice(0,34) + "…" : trade.securityName}</div>
+                                </div>
+                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
+                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{fmt$(trade.currentValue)}</span>
+                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
+                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>
+                                  {group.totalValue > 0 ? ((trade.currentValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}
+                                </span>
+                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
+                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
