@@ -1,7 +1,7 @@
 import type { AccountData, ImportHolding, ProcessedHolding, ImportMatch } from "./importParser"
 
-export const TAX_RATE_LT = 0.20
-export const TAX_RATE_ST = 0.37
+export const TAX_RATE_LT = 0.238
+export const TAX_RATE_ST = 0.408
 
 export interface TradeRow {
   id: string
@@ -58,13 +58,51 @@ export interface AssetAllocationRow {
 }
 
 function inferDisplayAssetClass(msCategory: string, productClass: string, modelClass: string): string {
-  const cat = (msCategory + " " + productClass + " " + modelClass).toLowerCase()
-  if (cat.includes("emerging")) return "International Equity"
+  // If we have a Model Class, strip the model name prefix to get just the asset class
+  // e.g. "Savvy Strategic 60/40 US Fixed Income" -> "US Fixed Income"
+  if (modelClass && modelClass !== "Unassigned" && modelClass !== "Cash" && modelClass !== "N/A") {
+    // Common asset class suffixes to extract
+    const suffixPatterns = [
+      /(?:.*?)\s+(US Fixed Income)$/i,
+      /(?:.*?)\s+(International Fixed Income)$/i,
+      /(?:.*?)\s+(US Equity)$/i,
+      /(?:.*?)\s+(International Equity)$/i,
+      /(?:.*?)\s+(Sector Equity)$/i,
+      /(?:.*?)\s+(Alternatives)$/i,
+      /(?:.*?)\s+(US Small Cap)$/i,
+      /(?:.*?)\s+(Emerging Markets)$/i,
+      /(?:.*?)\s+(US Large Cap)$/i,
+      /(?:.*?)\s+(High Yield Corporate Bonds)$/i,
+      /(?:.*?)\s+(Cash Equivalents)$/i,
+      /(?:.*?)\s+(Commodities)$/i,
+      /(?:.*?)\s+(Intl Developed ex-US Market)$/i,
+      /(?:.*?)\s+(U\.S\. Investment Grade FI)$/i,
+    ]
+    for (const pattern of suffixPatterns) {
+      const match = modelClass.match(pattern)
+      if (match) return match[1]
+    }
+    // Fallback: strip known model name patterns (anything before last 2-3 words)
+    const parts = modelClass.trim().split(/\s+/)
+    if (parts.length > 2) {
+      // Try last 2 words, then last 3 words
+      const last2 = parts.slice(-2).join(" ")
+      const last3 = parts.slice(-3).join(" ")
+      // If last word is a known asset class word, use last 2-3
+      const assetWords = ["equity", "income", "bonds", "markets", "cap", "alternatives", "commodities"]
+      if (assetWords.some(w => last2.toLowerCase().includes(w))) return last3
+    }
+  }
+
+  // Fallback to category inference
+  const cat = (msCategory + " " + productClass).toLowerCase()
+  if (cat.includes("emerging")) return "Emerging Markets"
   if (cat.includes("international") || cat.includes("foreign") || cat.includes("eafe")) return "International Equity"
-  if (cat.includes("high yield bond") || cat.includes("emerging markets bond") || cat.includes("international fixed")) return "US Fixed Income"
+  if (cat.includes("high yield")) return "High Yield Corporate Bonds"
   if (cat.includes("bond") || cat.includes("fixed") || cat.includes("muni") || cat.includes("treasury") ||
       cat.includes("securitized") || cat.includes("mortgage") || cat.includes("taxable bonds") || cat.includes("government")) return "US Fixed Income"
-  if (cat.includes("commodity") || cat.includes("gold") || cat.includes("alternative")) return "Alternatives"
+  if (cat.includes("commodity") || cat.includes("gold")) return "Commodities"
+  if (cat.includes("alternative")) return "Alternatives"
   if (cat.includes("sector") || cat.includes("technology") || cat.includes("industrials")) return "Sector Equity"
   return "US Equity"
 }
@@ -93,9 +131,12 @@ export function buildTransition(
       const isMap = p.action === "map"
 
       // Determine realized G/L
-      const realizedGL = (isSellLoss || isSellGain) ? h.unrealizedGL : 0
-      const realizedGLST = (isSellLoss || isSellGain) ? h.unrealizedGLST : 0
-      const realizedGLLT = (isSellLoss || isSellGain) ? h.unrealizedGLLT : 0
+      // For mapped positions: still selling the full position, realizing the gain
+      // The full current value gets sold and equivalent gets bought
+      const isSelling = isSellLoss || isSellGain || isMap
+      const realizedGL = isSelling ? h.unrealizedGL : 0
+      const realizedGLST = isSelling ? h.unrealizedGLST : 0
+      const realizedGLLT = isSelling ? h.unrealizedGLLT : 0
       const estimatedTax = realizedGL > 0
         ? (realizedGLLT > 0 ? realizedGLLT * TAX_RATE_LT : 0) + (realizedGLST > 0 ? realizedGLST * TAX_RATE_ST : 0)
         : 0
