@@ -74,9 +74,19 @@ function downloadCSV(rows: string[][], filename: string) {
 }
 
 // ─── PDF Export ─────────────────────────────────────────────────────────────
+function loadScript(src: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return }
+    const s = document.createElement("script")
+    s.src = src; s.onload = () => resolve(); s.onerror = reject
+    document.head.appendChild(s)
+  })
+}
+
 async function exportTransitionPDF(transition: TransitionSummary, trades: TradeRow[], clientName: string) {
-  // Dynamically load jsPDF
-  const { jsPDF } = await import("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" as any)
+  await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js")
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { jsPDF } = (window as any).jspdf
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
 
   const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })
