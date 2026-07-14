@@ -140,8 +140,11 @@ ${sells.map(t => `<tr><td>${t.accountNumber}</td><td>${t.ticker}</td><td>${t.sec
 </table>
 <div class="footer">This analysis is for internal advisory use only. Tax estimates are approximate and do not constitute tax advice.</div>
 </div></body></html>`
-  const w = window.open("", "_blank")
-  if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500) }
+  // Open in new tab and trigger print dialog (user saves as PDF)
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" })
+  const url = URL.createObjectURL(blob)
+  const w = window.open(url, "_blank")
+  if (w) setTimeout(() => { w.print() }, 800)
 }
 
 // ─── Main component ────────────────────────────────────────────────────────────
@@ -779,8 +782,8 @@ export default function Home() {
                   <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent)", fontFamily: "var(--font-mono)", marginBottom: 14 }}>Tax Summary</div>
                   {[
                     { label: "Total Value", value: fmt$(transition.totalValue), color: "var(--ink)" },
-                    { label: "LT Gains (20%)", value: fmt$(transition.ltGains), color: "#00f0c0" },
-                    { label: "ST Gains (37%)", value: fmt$(transition.stGains), color: "#ffaa00" },
+                    { label: "LT Gains (23.8%)", value: fmt$(transition.ltGains), color: "#00f0c0" },
+                    { label: "ST Gains (40.8%)", value: fmt$(transition.stGains), color: "#ffaa00" },
                     { label: "Losses Harvested", value: fmt$(Math.abs(transition.losses)), color: "#ff4488" },
                     { label: "Net Realized G/L", value: fmt$(transition.totalTradeGL), color: transition.totalTradeGL >= 0 ? "#00f0c0" : "#ff4488" },
                     { label: "Estimated Tax", value: fmt$(transition.estimatedTax), color: "#ff4488" },
