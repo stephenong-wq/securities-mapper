@@ -148,6 +148,18 @@ export function buildTransition(
 
   const rawTrades: TradeRow[] = []
 
+  // Pre-build equivValueByTarget across ALL accounts
+  // Maps target ticker -> total equivalent value already held (no sell needed)
+  const globalEquivByTarget = new Map<string, number>()
+  processedAccounts.forEach(({ processed }) => {
+    processed.filter(p => p.action === "map").forEach(p => {
+      p.matches.forEach(m => {
+        const w = m.weight ?? 1
+        globalEquivByTarget.set(m.ticker, (globalEquivByTarget.get(m.ticker) || 0) + p.holding.currentValue * w)
+      })
+    })
+  })
+
   processedAccounts.forEach(({ accountId, accountNumber, processed }) => {
     const account = accounts.find(a => a.accountId === accountId)
     if (!account) return
@@ -197,13 +209,19 @@ export function buildTransition(
         })
 
         // Buy equivalent for sell-gain positions
+        // Only buy if the target is still underweight after accounting for equivalents
         if (isSellGain && p.matches.length > 0) {
           p.matches.forEach(m => {
+            const equivSatisfied = globalEquivByTarget.get(m.ticker) || 0
+            const effectiveCurrent = m.currentValue + equivSatisfied
+            const stillNeeded = m.targetValue - effectiveCurrent
+            if (stillNeeded <= 100) return  // already satisfied by equivalents
+            const buyAmt = Math.min(h.currentValue * (m.weight ?? 1), stillNeeded)
             rawTrades.push({
               id: `${accountId}-${m.ticker}-buy-${h.ticker}`,
               accountId, accountNumber,
               ticker: m.ticker, securityName: m.name,
-              tradeType: "buy", tradeAmount: h.currentValue * (m.weight ?? 1),
+              tradeType: "buy", tradeAmount: buyAmt,
               currentValue: m.currentValue, targetValue: m.targetValue,
               unrealizedGL: 0, unrealizedGLST: 0, unrealizedGLLT: 0, isLongTerm: true,
               realizedGL: 0, realizedGLST: 0, realizedGLLT: 0, estimatedTax: 0,
@@ -216,18 +234,9 @@ export function buildTransition(
       }
     })
 
-    // Build equiv value map — how much of each model ticker is already satisfied by equivalents
-    const equivValueByTarget = new Map<string, number>()
-    processed.filter(p => p.action === "map").forEach(p => {
-      p.matches.forEach(m => {
-        const w = m.weight ?? 1
-        equivValueByTarget.set(m.ticker, (equivValueByTarget.get(m.ticker) || 0) + p.holding.currentValue * w)
-      })
-    })
-
     // In-model rebalancing — subtract equiv value already held from each target
     account.inModel.forEach(h => {
-      const equivSatisfied = equivValueByTarget.get(h.ticker) || 0
+      const equivSatisfied = globalEquivByTarget.get(h.ticker) || 0
       const effectiveCurrent = h.currentValue + equivSatisfied
       const gap = h.targetValue - effectiveCurrent
       // Skip: if we don't actually hold this security and gap is negative (equiv makes it overweight)
