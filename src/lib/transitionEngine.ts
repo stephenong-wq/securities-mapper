@@ -49,10 +49,20 @@ export interface AssetClassGroup {
   holdings: HoldingRow[]
 }
 
-export interface HoldingRow {
+export interface EquivRow {
   ticker: string
   securityName: string
   currentValue: number
+  equivalentOf: string   // target ticker this maps to
+  unrealizedGL: number
+}
+
+export interface HoldingRow {
+  ticker: string
+  securityName: string
+  currentValue: number        // raw holding value (0 if not held directly)
+  equivalentValue: number     // sum of all equivalents mapped to this ticker
+  effectiveCurrent: number    // currentValue + equivalentValue
   targetValue: number
   postTradeValue: number
   tradeAmount: number
@@ -61,6 +71,7 @@ export interface HoldingRow {
   unrealizedGL: number
   realizedGL: number
   estimatedTax: number
+  equivalents: EquivRow[]    // nested equivalents mapped to this security
 }
 
 export interface TransitionSummary {
@@ -354,41 +365,88 @@ function buildAssetAllocation(accounts: AccountData[], trades: TradeRow[], total
 
 function buildAssetGroups(accounts: AccountData[], trades: TradeRow[], totalValue: number): AssetClassGroup[] {
   const alloc = buildAssetAllocation(accounts, trades, totalValue)
+
+  // Build equiv map: target ticker -> list of equiv holdings
+  const equivsByTarget = new Map<string, EquivRow[]>()
+  trades.filter(t => t.isEquivalent).forEach(t => {
+    if (!equivsByTarget.has(t.mappedTicker)) equivsByTarget.set(t.mappedTicker, [])
+    equivsByTarget.get(t.mappedTicker)!.push({
+      ticker: t.ticker, securityName: t.securityName,
+      currentValue: t.currentValue, equivalentOf: t.mappedTicker,
+      unrealizedGL: t.unrealizedGL,
+    })
+  })
+
   return alloc.map(row => {
     const holdings: HoldingRow[] = []
 
-    // In-model holdings
+    // In-model holdings — with equivalents nested under each
     accounts.forEach(acct => {
       acct.inModel
         .filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === row.assetClass)
         .forEach(h => {
           const trade = trades.find(t => t.ticker === h.ticker && t.accountId === acct.accountId && t.isKeep)
+          const equivs = equivsByTarget.get(h.ticker) || []
+          const equivalentValue = equivs.reduce((s, e) => s + e.currentValue, 0)
+          const effectiveCurrent = h.currentValue + equivalentValue
+          const tradeAmt = trade?.tradeAmount || 0
           holdings.push({
             ticker: h.ticker, securityName: h.name,
-            currentValue: h.currentValue, targetValue: h.targetValue,
-            postTradeValue: h.currentValue + (trade?.tradeAmount || 0),
-            tradeAmount: trade?.tradeAmount || 0,
+            currentValue: h.currentValue,
+            equivalentValue,
+            effectiveCurrent,
+            targetValue: h.targetValue,
+            postTradeValue: effectiveCurrent + tradeAmt,
+            tradeAmount: tradeAmt,
             isEquivalent: false,
             unrealizedGL: h.unrealizedGL,
             realizedGL: trade?.realizedGL || 0,
             estimatedTax: trade?.estimatedTax || 0,
+            equivalents: equivs,
           })
         })
     })
 
-    // Equivalent holdings
+    // Also include any buy trades for securities not yet in model
     trades
-      .filter(t => t.isEquivalent && t.assetClass === row.assetClass)
+      .filter(t => t.tradeType === "buy" && !t.isKeep && t.assetClass === row.assetClass)
+      .forEach(t => {
+        // Skip if already in holdings
+        if (holdings.find(h => h.ticker === t.ticker)) return
+        const equivs = equivsByTarget.get(t.ticker) || []
+        const equivalentValue = equivs.reduce((s, e) => s + e.currentValue, 0)
+        const effectiveCurrent = t.currentValue + equivalentValue
+        holdings.push({
+          ticker: t.ticker, securityName: t.securityName,
+          currentValue: t.currentValue,
+          equivalentValue,
+          effectiveCurrent,
+          targetValue: t.targetValue,
+          postTradeValue: effectiveCurrent + t.tradeAmount,
+          tradeAmount: t.tradeAmount,
+          isEquivalent: false,
+          unrealizedGL: 0,
+          realizedGL: 0,
+          estimatedTax: 0,
+          equivalents: equivs,
+        })
+      })
+
+    // Sells (unassigned positions being sold - show at class level)
+    trades
+      .filter(t => t.tradeType === "sell" && !t.isKeep && t.assetClass === row.assetClass)
       .forEach(t => {
         holdings.push({
           ticker: t.ticker, securityName: t.securityName,
-          currentValue: t.currentValue, targetValue: 0,
-          postTradeValue: t.currentValue,
-          tradeAmount: 0,
-          isEquivalent: true,
-          equivalentOf: t.mappedTicker,
+          currentValue: t.currentValue, equivalentValue: 0, effectiveCurrent: t.currentValue,
+          targetValue: 0,
+          postTradeValue: 0,
+          tradeAmount: t.tradeAmount,
+          isEquivalent: false,
           unrealizedGL: t.unrealizedGL,
-          realizedGL: 0, estimatedTax: 0,
+          realizedGL: t.realizedGL,
+          estimatedTax: t.estimatedTax,
+          equivalents: [],
         })
       })
 
