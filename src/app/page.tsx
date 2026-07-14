@@ -73,78 +73,242 @@ function downloadCSV(rows: string[][], filename: string) {
   a.href = url; a.download = filename; a.click()
 }
 
-// ─── PDF Export ───────────────────────────────────────────────────────────────
-function exportTransitionPDF(transition: TransitionSummary, trades: TradeRow[], clientName: string) {
+// ─── PDF Export ─────────────────────────────────────────────────────────────
+async function exportTransitionPDF(transition: TransitionSummary, trades: TradeRow[], clientName: string) {
+  // Dynamically load jsPDF
+  const { jsPDF } = await import("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" as any)
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
+
   const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })
   const fmtD = (n: number) => n === 0 ? "$0.00" : n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 })
-  const fmtPct = (n: number) => `${(n*100).toFixed(1)}%`
-  const sells = trades.filter(t => t.tradeType === "sell").sort((a,b) => a.tradeAmount - b.tradeAmount).slice(0,10)
-  const buys  = trades.filter(t => t.tradeType === "buy").sort((a,b) => b.tradeAmount - a.tradeAmount).slice(0,10)
+  const fmtPct = (n: number) => `${(n * 100).toFixed(1)}%`
   const name = clientName || transition.clientName
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Transition Analysis</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}body{font-family:Georgia,serif;font-size:11px;color:#2a2a2a;padding:48px}
-.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:18px;border-bottom:2px solid #c8b89a}
-.logo{font-size:26px;font-weight:700;font-family:sans-serif}.title{font-size:20px;font-weight:700;margin-bottom:5px}.sub{font-size:11px;color:#666;margin-bottom:2px}
-.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:28px}
-.metric{border:1px solid #ddd;padding:12px 14px}.metric-label{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:6px;font-family:sans-serif}
-.metric-value{font-size:18px;font-weight:700}.red{color:#c0392b}.green{color:#1a7a4a}
-.section{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#888;border-bottom:2px solid #c8b89a;padding-bottom:5px;margin-bottom:10px;font-family:sans-serif}
-table{width:100%;border-collapse:collapse;margin-bottom:24px}th{background:#3d3427;color:#fff;padding:7px 9px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.06em;font-family:sans-serif}
-td{padding:6px 9px;border-bottom:1px solid #eee;font-size:10px}tr:nth-child(even) td{background:#f9f7f4}
-.right{text-align:right}.tax-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px}
-.tax-box{border:1px solid #ddd;padding:14px}.tax-title{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#3d3427;color:#fff;padding:5px 9px;margin:-14px -14px 10px;font-family:sans-serif}
-.tax-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0ece6;font-size:10px}
-.footer{margin-top:28px;padding-top:10px;border-top:1px solid #ddd;font-size:9px;color:#999;font-family:sans-serif}
-.page2{page-break-before:always;padding-top:48px}
-</style></head><body>
-<div class="header"><div><div class="title">Portfolio Transition Analysis</div><div class="sub">Client: ${name}</div><div class="sub">Prepared by Savvy Advisors &middot; ${transition.date}</div><div class="sub" style="margin-top:4px">Target Model: ${transition.modelName}</div></div><div class="logo">Savvy</div></div>
-<div class="metrics">
-<div class="metric"><div class="metric-label">Total Value</div><div class="metric-value">${fmt(transition.totalValue)}</div></div>
-<div class="metric"><div class="metric-label">Transition G/L</div><div class="metric-value ${transition.totalTradeGL < 0 ? "red" : ""}">${fmtD(transition.totalTradeGL)}</div></div>
-<div class="metric"><div class="metric-label">Estimated Tax</div><div class="metric-value red">${fmtD(transition.estimatedTax)}</div></div>
-<div class="metric"><div class="metric-label">Tax Impact</div><div class="metric-value red">${(transition.taxImpactPct*100).toFixed(2)}%</div></div>
-</div>
-<div class="section">Asset Allocation</div>
-<table><tr><th>Asset Class</th><th class="right">Current %</th><th class="right">Target %</th><th class="right">Post-Trade %</th><th class="right">Trade Amount</th></tr>
-${transition.assetAllocation.map(r => `<tr><td>${r.assetClass}</td><td class="right">${fmtPct(r.currentPct)}</td><td class="right">${fmtPct(r.targetPct)}</td><td class="right" style="font-weight:700;color:#1a5c8a">${fmtPct(r.postTradePct)}</td><td class="right ${r.tradeAmount<0?"red":"green"}">${r.tradeAmount>=0?"+":""}${fmt(r.tradeAmount)}</td></tr>`).join("")}
-</table>
-<div class="tax-grid">
-<div class="tax-box"><div class="tax-title">Pre-Transition</div>
-<div class="tax-row"><span>Unrealized G/L</span><span>${fmtD(transition.ltGains+transition.stGains+transition.losses)}</span></div>
-<div class="tax-row"><span>Gains</span><span>${fmtD(transition.ltGains+transition.stGains)}</span></div>
-<div class="tax-row"><span>Losses</span><span class="red">${fmtD(transition.losses)}</span></div>
-</div>
-<div class="tax-box"><div class="tax-title">Post-Transition</div>
-<div class="tax-row" style="font-weight:600"><span>Realized Gains</span></div>
-<div class="tax-row"><span>&nbsp;&nbsp;Long Term</span><span>${fmtD(transition.ltGains)}</span></div>
-<div class="tax-row"><span>&nbsp;&nbsp;Short Term</span><span>${fmtD(transition.stGains)}</span></div>
-<div class="tax-row"><span>Net Realized G/L</span><span>${fmtD(transition.totalTradeGL)}</span></div>
-<div class="tax-row"><span>Estimated Tax</span><span class="red">${fmtD(transition.estimatedTax)}</span></div>
-<div class="tax-row"><span># of Trades</span><span>${transition.numTrades}</span></div>
-</div></div>
-<div class="footer">This analysis is for internal advisory use only. Tax estimates are approximate and do not constitute tax advice.</div>
-<div class="page2">
-<div class="header"><div><div class="title">Detailed Trade Analysis</div><div class="sub">Client: ${name}</div><div class="sub">Prepared by Savvy Advisors &middot; ${transition.date}</div></div><div class="logo">Savvy</div></div>
-<div class="section">Accounts</div>
-<table><tr><th>Account</th><th>Reg Type</th><th class="right">Account Value</th></tr>
-${transition.accounts.map(a => `<tr><td>${a.accountNumber}</td><td>${a.regType||"&mdash;"}</td><td class="right">${fmt(a.value)}</td></tr>`).join("")}
-</table>
-<div class="section">Top 10 Buys</div>
-<table><tr><th>Account</th><th>Ticker</th><th>Security Name</th><th class="right">Trade $</th></tr>
-${buys.map(t => `<tr><td>${t.accountNumber}</td><td>${t.ticker}</td><td>${t.securityName}</td><td class="right green">+${fmt(t.tradeAmount)}</td></tr>`).join("")}
-</table>
-<div class="section">Top 10 Sells</div>
-<table><tr><th>Account</th><th>Ticker</th><th>Security Name</th><th class="right">Trade $</th><th class="right">G/L $</th></tr>
-${sells.map(t => `<tr><td>${t.accountNumber}</td><td>${t.ticker}</td><td>${t.securityName}</td><td class="right red">${fmt(t.tradeAmount)}</td><td class="${t.realizedGL<0?"red":t.realizedGL>0?"green":""} right">${t.realizedGL!==0?fmtD(t.realizedGL):"$0.00"}</td></tr>`).join("")}
-</table>
-<div class="footer">This analysis is for internal advisory use only. Tax estimates are approximate and do not constitute tax advice.</div>
-</div></body></html>`
-  // Open in new tab and trigger print dialog (user saves as PDF)
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" })
-  const url = URL.createObjectURL(blob)
-  const w = window.open(url, "_blank")
-  if (w) setTimeout(() => { w.print() }, 800)
+  const sells = trades.filter(t => t.tradeType === "sell").sort((a, b) => a.tradeAmount - b.tradeAmount).slice(0, 10)
+  const buys = trades.filter(t => t.tradeType === "buy").sort((a, b) => b.tradeAmount - a.tradeAmount).slice(0, 10)
+
+  const W = 210; const M = 15; const lineH = 6
+  let y = 20
+
+  // Header
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(18)
+  doc.setTextColor(44, 44, 44)
+  doc.text("Portfolio Transition Analysis", M, y)
+  doc.setFontSize(22)
+  doc.setTextColor(61, 52, 39)
+  doc.text("Savvy", W - M, y, { align: "right" })
+  y += 8
+
+  doc.setFont("helvetica", "normal")
+  doc.setFontSize(10)
+  doc.setTextColor(100)
+  doc.text(`Client: ${name}`, M, y); y += 5
+  doc.text(`Prepared by Savvy Advisors · ${transition.date}`, M, y); y += 5
+  doc.text(`Target Model: ${transition.modelName}`, M, y); y += 8
+
+  doc.setDrawColor(200, 184, 154)
+  doc.setLineWidth(0.5)
+  doc.line(M, y, W - M, y); y += 8
+
+  // Metrics
+  const metrics = [
+    { label: "TOTAL VALUE", value: fmt(transition.totalValue), color: [44, 44, 44] as [number,number,number] },
+    { label: "TRANSITION G/L", value: fmtD(transition.totalTradeGL), color: transition.totalTradeGL < 0 ? [192, 57, 43] as [number,number,number] : [44, 44, 44] as [number,number,number] },
+    { label: "ESTIMATED TAX", value: fmtD(transition.estimatedTax), color: [192, 57, 43] as [number,number,number] },
+    { label: "TAX IMPACT", value: `${(transition.taxImpactPct * 100).toFixed(2)}%`, color: [192, 57, 43] as [number,number,number] },
+  ]
+  const mW = (W - 2 * M - 9) / 4
+  metrics.forEach((m, i) => {
+    const x = M + i * (mW + 3)
+    doc.setDrawColor(200)
+    doc.setFillColor(255, 255, 255)
+    doc.rect(x, y, mW, 18, "S")
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(7)
+    doc.setTextColor(150)
+    doc.text(m.label, x + 3, y + 5)
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(12)
+    doc.setTextColor(...m.color)
+    doc.text(m.value, x + 3, y + 13)
+  })
+  y += 26
+
+  // Asset Allocation table
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(9)
+  doc.setTextColor(150)
+  doc.text("ASSET ALLOCATION", M, y); y += 4
+  doc.setDrawColor(200, 184, 154)
+  doc.line(M, y, W - M, y); y += 5
+
+  const acCols = [55, 30, 30, 35, 35]
+  const acHeaders = ["Asset Class", "Current %", "Target %", "Post-Trade %", "Trade Amount"]
+  doc.setFillColor(61, 52, 39)
+  doc.rect(M, y, W - 2 * M, 6, "F")
+  doc.setTextColor(255)
+  doc.setFontSize(7)
+  let cx = M + 2
+  acHeaders.forEach((h, i) => {
+    doc.text(h, cx, y + 4, { align: i > 0 ? "right" : "left" })
+    cx += acCols[i]
+  })
+  y += 6
+
+  transition.assetAllocation.forEach((row, ri) => {
+    if (ri % 2 === 0) { doc.setFillColor(249, 247, 244); doc.rect(M, y, W - 2 * M, 5, "F") }
+    doc.setTextColor(44, 44, 44)
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(8)
+    let cx2 = M + 2
+    const vals = [row.assetClass, fmtPct(row.currentPct), fmtPct(row.targetPct), fmtPct(row.postTradePct), (row.tradeAmount >= 0 ? "+" : "") + fmt(row.tradeAmount)]
+    vals.forEach((v, i) => {
+      if (i > 0) doc.setTextColor(row.tradeAmount < 0 && i === 4 ? 192 : i === 3 ? 26 : 44, i === 3 ? 92 : i === 4 && row.tradeAmount < 0 ? 57 : 44, i === 3 ? 138 : 44)
+      doc.text(v, cx2, y + 3.5, { align: i > 0 ? "right" : "left" })
+      doc.setTextColor(44, 44, 44)
+      cx2 += acCols[i]
+    })
+    y += 5
+  })
+  y += 8
+
+  // Tax grid
+  const taxBoxW = (W - 2 * M - 5) / 2
+  const preTax = [
+    ["Unrealized G/L", fmtD(transition.ltGains + transition.stGains + transition.losses)],
+    ["Gains", fmtD(transition.ltGains + transition.stGains)],
+    ["Losses", fmtD(transition.losses)],
+  ]
+  const postTax = [
+    ["Long Term Gains", fmtD(transition.ltGains)],
+    ["Short Term Gains", fmtD(transition.stGains)],
+    ["Net Realized G/L", fmtD(transition.totalTradeGL)],
+    ["Estimated Tax", fmtD(transition.estimatedTax)],
+    ["# of Trades", String(transition.numTrades)],
+  ]
+
+  const drawTaxBox = (label: string, rows: string[][], bx: number) => {
+    doc.setFillColor(61, 52, 39)
+    doc.rect(bx, y, taxBoxW, 6, "F")
+    doc.setTextColor(255)
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(7)
+    doc.text(label, bx + 3, y + 4)
+    let ty = y + 8
+    rows.forEach(([k, v]) => {
+      doc.setFont("helvetica", "normal")
+      doc.setFontSize(8)
+      doc.setTextColor(44, 44, 44)
+      doc.text(k, bx + 3, ty)
+      doc.text(v, bx + taxBoxW - 3, ty, { align: "right" })
+      doc.setDrawColor(240, 236, 230)
+      doc.line(bx, ty + 1.5, bx + taxBoxW, ty + 1.5)
+      ty += 5
+    })
+  }
+  drawTaxBox("PRE-TRANSITION", preTax, M)
+  drawTaxBox("POST-TRANSITION", postTax, M + taxBoxW + 5)
+  y += 6 + postTax.length * 5 + 10
+
+  // Footer
+  doc.setFontSize(7)
+  doc.setTextColor(180)
+  doc.text("This analysis is for internal advisory use only. Tax estimates are approximate and do not constitute tax advice.", M, 287)
+
+  // Page 2
+  doc.addPage()
+  y = 20
+
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(18)
+  doc.setTextColor(44, 44, 44)
+  doc.text("Detailed Trade Analysis", M, y)
+  doc.setFontSize(22)
+  doc.setTextColor(61, 52, 39)
+  doc.text("Savvy", W - M, y, { align: "right" })
+  y += 8
+  doc.setFont("helvetica", "normal")
+  doc.setFontSize(10)
+  doc.setTextColor(100)
+  doc.text(`Client: ${name}`, M, y); y += 5
+  doc.text(`Prepared by Savvy Advisors · ${transition.date}`, M, y); y += 10
+
+  // Accounts table
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(9)
+  doc.setTextColor(150)
+  doc.text("ACCOUNTS", M, y); y += 4
+  doc.line(M, y, W - M, y); y += 5
+  doc.setFillColor(61, 52, 39)
+  doc.rect(M, y, W - 2 * M, 6, "F")
+  doc.setTextColor(255)
+  doc.setFontSize(7)
+  doc.text("Account", M + 2, y + 4)
+  doc.text("Reg Type", M + 60, y + 4)
+  doc.text("Account Value", W - M - 2, y + 4, { align: "right" })
+  y += 6
+  transition.accounts.forEach((a, ri) => {
+    if (ri % 2 === 0) { doc.setFillColor(249, 247, 244); doc.rect(M, y, W - 2 * M, 5, "F") }
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(44, 44, 44)
+    doc.text(a.accountNumber, M + 2, y + 3.5)
+    doc.text(a.regType || "—", M + 60, y + 3.5)
+    doc.text(fmt(a.value), W - M - 2, y + 3.5, { align: "right" })
+    y += 5
+  })
+  y += 8
+
+  // Top 10 Buys
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(150)
+  doc.text("TOP 10 BUYS", M, y); y += 4
+  doc.line(M, y, W - M, y); y += 5
+  doc.setFillColor(61, 52, 39); doc.rect(M, y, W - 2 * M, 6, "F")
+  doc.setTextColor(255); doc.setFontSize(7)
+  doc.text("Account", M + 2, y + 4); doc.text("Ticker", M + 32, y + 4)
+  doc.text("Security Name", M + 55, y + 4); doc.text("Trade $", W - M - 2, y + 4, { align: "right" })
+  y += 6
+  buys.forEach((t, ri) => {
+    if (ri % 2 === 0) { doc.setFillColor(249, 247, 244); doc.rect(M, y, W - 2 * M, 5, "F") }
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(44, 44, 44)
+    doc.text(t.accountNumber, M + 2, y + 3.5)
+    doc.text(t.ticker, M + 32, y + 3.5)
+    const sn = t.securityName.length > 35 ? t.securityName.slice(0, 33) + "…" : t.securityName
+    doc.text(sn, M + 55, y + 3.5)
+    doc.setTextColor(26, 122, 74)
+    doc.text("+" + fmt(t.tradeAmount), W - M - 2, y + 3.5, { align: "right" })
+    y += 5
+  })
+  y += 8
+
+  // Top 10 Sells
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(150)
+  doc.text("TOP 10 SELLS", M, y); y += 4
+  doc.line(M, y, W - M, y); y += 5
+  doc.setFillColor(61, 52, 39); doc.rect(M, y, W - 2 * M, 6, "F")
+  doc.setTextColor(255); doc.setFontSize(7)
+  doc.text("Account", M + 2, y + 4); doc.text("Ticker", M + 32, y + 4)
+  doc.text("Security Name", M + 55, y + 4)
+  doc.text("Trade $", W - M - 32, y + 4, { align: "right" })
+  doc.text("G/L $", W - M - 2, y + 4, { align: "right" })
+  y += 6
+  sells.forEach((t, ri) => {
+    if (ri % 2 === 0) { doc.setFillColor(249, 247, 244); doc.rect(M, y, W - 2 * M, 5, "F") }
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(44, 44, 44)
+    doc.text(t.accountNumber, M + 2, y + 3.5)
+    doc.text(t.ticker, M + 32, y + 3.5)
+    const sn = t.securityName.length > 30 ? t.securityName.slice(0, 28) + "…" : t.securityName
+    doc.text(sn, M + 55, y + 3.5)
+    doc.setTextColor(192, 57, 43)
+    doc.text(fmt(t.tradeAmount), W - M - 32, y + 3.5, { align: "right" })
+    doc.setTextColor(t.realizedGL < 0 ? 192 : t.realizedGL > 0 ? 26 : 100, t.realizedGL < 0 ? 57 : t.realizedGL > 0 ? 122 : 100, t.realizedGL < 0 ? 43 : t.realizedGL > 0 ? 74 : 100)
+    doc.text(t.realizedGL !== 0 ? fmtD(t.realizedGL) : "$0.00", W - M - 2, y + 3.5, { align: "right" })
+    y += 5
+  })
+
+  doc.setFontSize(7); doc.setTextColor(180)
+  doc.text("This analysis is for internal advisory use only. Tax estimates are approximate and do not constitute tax advice.", M, 287)
+
+  const filename = `Transition-${(name || "Client").replace(/\s+/g, "-")}-${new Date().toISOString().slice(0,10)}.pdf`
+  doc.save(filename)
 }
 
 // ─── Main component ────────────────────────────────────────────────────────────
@@ -296,6 +460,20 @@ export default function Home() {
     setEditedTrades(prev => prev.map(t => {
       if (t.id !== id) return t
       const updated = { ...t, [field]: value, userOverride: true }
+
+      // When trade amount changes, recalculate G/L proportionally
+      if (field === "editTradeAmount" && t.isSell && t.currentValue > 0) {
+        const newAmt = Math.abs(Number(value))
+        const ratio = newAmt / t.currentValue
+        updated.realizedGLLT = t.unrealizedGLLT * ratio
+        updated.realizedGLST = t.unrealizedGLST * ratio
+        updated.realizedGL = updated.realizedGLLT + updated.realizedGLST
+        updated.estimatedTax = updated.realizedGL > 0
+          ? (updated.realizedGLLT > 0 ? updated.realizedGLLT * 0.238 : 0) + (updated.realizedGLST > 0 ? updated.realizedGLST * 0.408 : 0)
+          : 0
+      }
+
+      // Manual G/L override
       if (field === "realizedGL") {
         const gl = Number(value)
         updated.estimatedTax = gl > 0
@@ -838,10 +1016,11 @@ export default function Home() {
               {transition && !transitionLoading && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {/* Column headers */}
-                  <div style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 90px 90px 90px 60px 60px 60px", padding: "6px 14px", gap: 8, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 80px 90px 90px 90px 60px 60px 60px", padding: "6px 14px", gap: 8, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>
                     <span></span>
                     <span>Class / Security</span>
                     <span style={{ textAlign: "right" }}>Trade $</span>
+                    <span style={{ textAlign: "right" }}>G/L $</span>
                     <span style={{ textAlign: "right" }}>Current $</span>
                     <span style={{ textAlign: "right" }}>Target $</span>
                     <span style={{ textAlign: "right" }}>Post $</span>
@@ -860,7 +1039,7 @@ export default function Home() {
                         {/* Asset class row */}
                         <div
                           onClick={() => setExpandedAssetClasses(prev => { const next = new Set(prev); if (next.has(group.assetClass)) next.delete(group.assetClass); else next.add(group.assetClass); return next })}
-                          style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 90px 90px 90px 60px 60px 60px", padding: "12px 14px", gap: 8, alignItems: "center", cursor: "pointer", background: group.inTolerance ? "transparent" : "rgba(255,68,136,0.04)" }}
+                          style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 80px 90px 90px 90px 60px 60px 60px", padding: "12px 14px", gap: 8, alignItems: "center", cursor: "pointer", background: group.inTolerance ? "transparent" : "rgba(255,68,136,0.04)" }}
                           onMouseEnter={e => (e.currentTarget.style.background = group.inTolerance ? "rgba(0,200,255,0.03)" : "rgba(255,68,136,0.06)")}
                           onMouseLeave={e => (e.currentTarget.style.background = group.inTolerance ? "transparent" : "rgba(255,68,136,0.04)")}
                         >
@@ -879,6 +1058,14 @@ export default function Home() {
                           <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: tradeDiff > 0 ? "#00f0c0" : tradeDiff < 0 ? "#ff4488" : "var(--ink-faint)" }}>
                             {tradeDiff !== 0 ? `${tradeDiff > 0 ? "+" : ""}${fmt$(tradeDiff)}` : "—"}
                           </span>
+
+                          {/* G/L $ — sum from editedTrades for this class */}
+                          {(() => {
+                            const classGL = editedTrades.filter(t => t.assetClass === group.assetClass && t.isSell).reduce((s,t) => s + t.realizedGL, 0)
+                            return <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: classGL < 0 ? "#ff4488" : classGL > 0 ? "#00f0c0" : "var(--ink-faint)" }}>
+                              {classGL !== 0 ? fmt$(classGL) : "—"}
+                            </span>
+                          })()}
 
                           {/* Current $ */}
                           <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-muted)" }}>{fmt$(group.currentValue)}</span>
@@ -912,7 +1099,7 @@ export default function Home() {
                               const effectiveAmount = trade.editTradeAmount ?? trade.tradeAmount
 
                               return (
-                                <div key={trade.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 90px 90px 90px 60px 60px 60px", padding: "9px 14px", gap: 8, alignItems: "center", borderBottom: "1px solid var(--border)", background: idx % 2 === 0 ? "var(--surface-sunken)" : "transparent" }}>
+                                <div key={trade.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 80px 90px 90px 90px 60px 60px 60px", padding: "9px 14px", gap: 8, alignItems: "center", borderBottom: "1px solid var(--border)", background: idx % 2 === 0 ? "var(--surface-sunken)" : "transparent" }}>
                                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor, boxShadow: `0 0 4px ${dotColor}`, display: "inline-block", margin: "0 auto" }} />
 
                                   <div>
@@ -953,6 +1140,11 @@ export default function Home() {
                                     />
                                   </div>
 
+                                  {/* G/L $ */}
+                                  <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: trade.realizedGL < 0 ? "#ff4488" : trade.realizedGL > 0 ? "#00f0c0" : "var(--ink-faint)" }}>
+                                    {trade.realizedGL !== 0 ? fmt$(trade.realizedGL) : "—"}
+                                  </span>
+
                                   {/* Current $ */}
                                   <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{fmt$(trade.currentValue)}</span>
 
@@ -984,7 +1176,7 @@ export default function Home() {
 
                             {/* Equivalent holdings */}
                             {editedTrades.filter(t => t.isEquivalent && t.assetClass === group.assetClass).map((trade, idx) => (
-                              <div key={trade.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 90px 90px 90px 60px 60px 60px", padding: "8px 14px", gap: 8, alignItems: "center", borderBottom: "1px solid var(--border)", background: "rgba(68,136,255,0.03)" }}>
+                              <div key={trade.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 80px 90px 90px 90px 60px 60px 60px", padding: "8px 14px", gap: 8, alignItems: "center", borderBottom: "1px solid var(--border)", background: "rgba(68,136,255,0.03)" }}>
                                 <span style={{ fontSize: 12, color: "#4488ff", textAlign: "center" }}>≈</span>
                                 <div>
                                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -995,7 +1187,9 @@ export default function Home() {
                                   <div style={{ fontSize: 10, color: "var(--ink-faint)", marginTop: 2 }}>{trade.securityName.length > 36 ? trade.securityName.slice(0,34) + "…" : trade.securityName}</div>
                                 </div>
                                 <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
+                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
                                 <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{fmt$(trade.currentValue)}</span>
+                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
                                 <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
                                 <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{fmt$(trade.currentValue)}</span>
                                 <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>
