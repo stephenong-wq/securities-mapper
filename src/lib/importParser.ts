@@ -252,8 +252,8 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
     modelCategories: string[]
     inModel: ImportHolding[]
     unassigned: ImportHolding[]
+    cashValue: number
   }>()
-
   holdingRows.forEach(row => {
     const ticker = String(row["Ticker"] || "").trim().toUpperCase()
     if (!ticker || ticker === "CUSTODIAL_CASH") return
