@@ -252,6 +252,7 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
     modelCategories: string[]
     inModel: ImportHolding[]
     unassigned: ImportHolding[]
+    cashValue: number
   }>()
 
   holdingRows.forEach(row => {
