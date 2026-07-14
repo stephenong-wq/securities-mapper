@@ -810,7 +810,19 @@ export default function Home() {
                 {transition && (
                   <div style={{ display: "flex", gap: 8 }}>
                     <Chip label={`${transition.numTrades} trades`} color="#00f0c0" bg="#001e18" glow="#00f0c0" />
-                    <Chip label={`${fmt$(transition.estimatedTax)} est. tax`} color="#ffaa00" bg="#1e0800" glow="#ffaa00" />
+                    <Chip label={`${fmt$(transition.totalRealizedGL || 0)} cap gains`} color="#ffaa00" bg="#1e0800" glow="#ffaa00" />
+                    <button
+                      onClick={() => {
+                        const allClasses = new Set<string>((transition.assetGroups || []).map(g => g.assetClass))
+                        if (expandedAssetClasses.size === allClasses.size) {
+                          setExpandedAssetClasses(new Set())
+                        } else {
+                          setExpandedAssetClasses(allClasses)
+                        }
+                      }}
+                      style={{ padding: "3px 12px", background: "rgba(0,200,255,0.08)", color: "var(--accent)", border: "1px solid rgba(0,200,255,0.25)", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-mono)" }}>
+                      {expandedAssetClasses.size > 0 ? "Collapse All" : "Expand All"}
+                    </button>
                     <button onClick={() => exportTransitionPDF(transition, editedTrades, clientName)}
                       style={{ padding: "3px 12px", background: "rgba(0,200,255,0.08)", color: "var(--accent)", border: "1px solid rgba(0,200,255,0.25)", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-mono)" }}>
                       Export PDF
@@ -826,12 +838,13 @@ export default function Home() {
               {transition && !transitionLoading && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {/* Column headers */}
-                  <div style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 90px 90px 70px 70px 70px", padding: "6px 14px", gap: 8, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 90px 90px 90px 60px 60px 60px", padding: "6px 14px", gap: 8, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-faint)", fontFamily: "var(--font-mono)" }}>
                     <span></span>
                     <span>Class / Security</span>
                     <span style={{ textAlign: "right" }}>Trade $</span>
                     <span style={{ textAlign: "right" }}>Current $</span>
                     <span style={{ textAlign: "right" }}>Target $</span>
+                    <span style={{ textAlign: "right" }}>Post $</span>
                     <span style={{ textAlign: "right" }}>Cur %</span>
                     <span style={{ textAlign: "right" }}>Tgt %</span>
                     <span style={{ textAlign: "right" }}>Post %</span>
@@ -847,7 +860,7 @@ export default function Home() {
                         {/* Asset class row */}
                         <div
                           onClick={() => setExpandedAssetClasses(prev => { const next = new Set(prev); if (next.has(group.assetClass)) next.delete(group.assetClass); else next.add(group.assetClass); return next })}
-                          style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 90px 90px 70px 70px 70px", padding: "12px 14px", gap: 8, alignItems: "center", cursor: "pointer", background: group.inTolerance ? "transparent" : "rgba(255,68,136,0.04)" }}
+                          style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 90px 90px 90px 60px 60px 60px", padding: "12px 14px", gap: 8, alignItems: "center", cursor: "pointer", background: group.inTolerance ? "transparent" : "rgba(255,68,136,0.04)" }}
                           onMouseEnter={e => (e.currentTarget.style.background = group.inTolerance ? "rgba(0,200,255,0.03)" : "rgba(255,68,136,0.06)")}
                           onMouseLeave={e => (e.currentTarget.style.background = group.inTolerance ? "transparent" : "rgba(255,68,136,0.04)")}
                         >
@@ -873,6 +886,9 @@ export default function Home() {
                           {/* Target $ */}
                           <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-muted)" }}>{fmt$(group.targetValue)}</span>
 
+                          {/* Post $ */}
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: group.inTolerance ? "#00f0c0" : "#ff4488" }}>{fmt$(group.postTradeValue)}</span>
+
                           {/* Current % */}
                           <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{(group.currentPct * 100).toFixed(1)}%</span>
 
@@ -896,7 +912,7 @@ export default function Home() {
                               const effectiveAmount = trade.editTradeAmount ?? trade.tradeAmount
 
                               return (
-                                <div key={trade.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 90px 90px 70px 70px 70px", padding: "9px 14px", gap: 8, alignItems: "center", borderBottom: "1px solid var(--border)", background: idx % 2 === 0 ? "var(--surface-sunken)" : "transparent" }}>
+                                <div key={trade.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 90px 90px 90px 60px 60px 60px", padding: "9px 14px", gap: 8, alignItems: "center", borderBottom: "1px solid var(--border)", background: idx % 2 === 0 ? "var(--surface-sunken)" : "transparent" }}>
                                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor, boxShadow: `0 0 4px ${dotColor}`, display: "inline-block", margin: "0 auto" }} />
 
                                   <div>
@@ -943,6 +959,11 @@ export default function Home() {
                                   {/* Target $ */}
                                   <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{trade.targetValue > 0 ? fmt$(trade.targetValue) : "—"}</span>
 
+                                  {/* Post $ */}
+                                  <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>
+                                    {fmt$(trade.currentValue + (trade.editTradeAmount ?? trade.tradeAmount))}
+                                  </span>
+
                                   {/* Current % */}
                                   <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>
                                     {group.totalValue > 0 ? ((trade.currentValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}
@@ -953,9 +974,9 @@ export default function Home() {
                                     {group.totalValue > 0 && trade.targetValue > 0 ? ((trade.targetValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}
                                   </span>
 
-                                  {/* G/L */}
-                                  <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: trade.realizedGL < 0 ? "#ff4488" : trade.realizedGL > 0 ? "#00f0c0" : "var(--ink-faint)" }}>
-                                    {trade.realizedGL !== 0 ? fmt$(trade.realizedGL) : "—"}
+                                  {/* Post % */}
+                                  <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>
+                                    {group.totalValue > 0 ? (((trade.currentValue + (trade.editTradeAmount ?? trade.tradeAmount)) / group.totalValue) * 100).toFixed(1) + "%" : "—"}
                                   </span>
                                 </div>
                               )
@@ -963,7 +984,7 @@ export default function Home() {
 
                             {/* Equivalent holdings */}
                             {editedTrades.filter(t => t.isEquivalent && t.assetClass === group.assetClass).map((trade, idx) => (
-                              <div key={trade.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 90px 90px 70px 70px 70px", padding: "8px 14px", gap: 8, alignItems: "center", borderBottom: "1px solid var(--border)", background: "rgba(68,136,255,0.03)" }}>
+                              <div key={trade.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 90px 90px 90px 60px 60px 60px", padding: "8px 14px", gap: 8, alignItems: "center", borderBottom: "1px solid var(--border)", background: "rgba(68,136,255,0.03)" }}>
                                 <span style={{ fontSize: 12, color: "#4488ff", textAlign: "center" }}>≈</span>
                                 <div>
                                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -976,11 +997,14 @@ export default function Home() {
                                 <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
                                 <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{fmt$(trade.currentValue)}</span>
                                 <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
+                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{fmt$(trade.currentValue)}</span>
                                 <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>
                                   {group.totalValue > 0 ? ((trade.currentValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}
                                 </span>
                                 <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
-                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
+                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>
+                                  {group.totalValue > 0 ? ((trade.currentValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}
+                                </span>
                               </div>
                             ))}
                           </div>
