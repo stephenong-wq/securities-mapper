@@ -75,6 +75,7 @@ export interface TransitionSummary {
   stGains: number
   losses: number
   numTrades: number
+  totalRealizedGL: number
   assetAllocation: AssetAllocationRow[]
   assetGroups: AssetClassGroup[]
   trades: TradeRow[]
@@ -279,6 +280,7 @@ export function buildTransition(
     totalTradeGL, estimatedTax,
     taxImpactPct: totalValue > 0 ? estimatedTax / totalValue : 0,
     ltGains, stGains, losses,
+    totalRealizedGL: ltGains + stGains + losses,
     numTrades: trades.filter(t => t.tradeType !== "equivalent").length,
     assetAllocation, assetGroups, trades, accounts: accountSummary,
   }
@@ -298,16 +300,13 @@ function buildAssetAllocation(accounts: AccountData[], trades: TradeRow[], total
         .filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === ac)
         .reduce((s, h) => s + h.currentValue, 0), 0)
 
-    // For equivalents, their current value counts toward the target asset class
-    const equivalentValue = trades
-      .filter(t => t.isEquivalent && inferDisplayAssetClass(t.msCategory, t.productClass, "") === ac)
-      .reduce((s, t) => s + t.currentValue, 0)
-
+    // tradeAmount = net of buys and sells (equivalents have tradeAmount=0, so excluded)
     const tradeAmount = trades
       .filter(t => !t.isEquivalent && t.assetClass === ac)
       .reduce((s, t) => s + t.tradeAmount, 0)
 
-    const postTradeValue = Math.max(0, currentValue + tradeAmount + equivalentValue)
+    // Post trade = current + net trades (equivalents already counted in currentValue)
+    const postTradeValue = Math.max(0, currentValue + tradeAmount)
     const targetValue = accounts.reduce((sum, acct) =>
       sum + acct.inModel.filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === ac)
         .reduce((s, h) => s + h.targetValue, 0), 0)
