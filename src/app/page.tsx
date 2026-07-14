@@ -1124,12 +1124,8 @@ export default function Home() {
                                           ) : holding.ticker}
                                         </span>
                                         {editTrade && (
-                                          <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 20, background: isSell ? "#1e0018" : "#001e18", color: dotColor, fontWeight: 700, border: `1px solid ${dotColor}33` }}>
-                                            <select value={editTrade.tradeType} onChange={e => updateTrade(editTrade.id, "tradeType", e.target.value)}
-                                              style={{ background: "transparent", border: "none", color: dotColor, fontWeight: 700, fontSize: 10, cursor: "pointer", outline: "none" }}>
-                                              <option value="buy">Buy</option>
-                                              <option value="sell">Sell</option>
-                                            </select>
+                                          <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: isSell ? "#1e0018" : "#001e18", color: dotColor, fontWeight: 700, border: `1px solid ${dotColor}33` }}>
+                                            {isSell ? "Sell" : "Buy"}
                                           </span>
                                         )}
                                         {editTrade?.isKeep && <span style={{ fontSize: 10, color: "var(--ink-faint)" }}>rebal</span>}
@@ -1139,9 +1135,15 @@ export default function Home() {
                                     </div>
                                     <div style={{ textAlign: "right" }}>
                                       {editTrade ? (
-                                        <input value={Math.abs(effectiveTradeAmt).toFixed(0)}
-                                          onChange={e => { const val = parseFloat(e.target.value) || 0; updateTrade(editTrade.id, "editTradeAmount", isSell ? -val : val) }}
-                                          style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: isSell ? "#ff4488" : "#00f0c0", background: "transparent", border: "none", borderBottom: "1px dashed rgba(255,255,255,0.15)", outline: "none", width: 80, textAlign: "right" }} />
+                                        <input
+                                          value={effectiveTradeAmt.toFixed(0)}
+                                          onChange={e => {
+                                            const val = parseFloat(e.target.value) || 0
+                                            const newType = val < 0 ? "sell" : "buy"
+                                            updateTrade(editTrade.id, "editTradeAmount", val)
+                                            if (newType !== editTrade.tradeType) updateTrade(editTrade.id, "tradeType", newType)
+                                          }}
+                                          style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: effectiveTradeAmt < 0 ? "#ff4488" : "#00f0c0", background: "transparent", border: "none", borderBottom: "1px dashed rgba(255,255,255,0.15)", outline: "none", width: 85, textAlign: "right" }} />
                                       ) : <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>}
                                     </div>
                                     <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: effectiveGL < 0 ? "#ff4488" : effectiveGL > 0 ? "#00f0c0" : "var(--ink-faint)" }}>{effectiveGL !== 0 ? fmt$(effectiveGL) : "—"}</span>
@@ -1152,26 +1154,58 @@ export default function Home() {
                                     <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>{group.totalValue > 0 && holding.targetValue > 0 ? ((holding.targetValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}</span>
                                     <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>{group.totalValue > 0 ? ((postVal / group.totalValue) * 100).toFixed(1) + "%" : "—"}</span>
                                   </div>
-                                  {hasEquivs && holding.equivalents.map((eq, eIdx) => (
-                                    <div key={eq.ticker + eIdx} style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 80px 90px 90px 90px 60px 60px 60px", padding: "7px 14px 7px 36px", gap: 8, alignItems: "center", borderBottom: eIdx === holding.equivalents.length - 1 ? "1px solid var(--border)" : "none", background: "rgba(68,136,255,0.04)" }}>
-                                      <span style={{ fontSize: 11, color: "#4488ff", textAlign: "center" }}>≈</span>
-                                      <div>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "#4488ff" }}>{eq.ticker}</span>
-                                          <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 20, background: "#001030", color: "#4488ff", fontWeight: 700, border: "1px solid #4488ff33" }}>Equiv</span>
+                                  {hasEquivs && holding.equivalents.map((eq, eIdx) => {
+                                    const equivTradeId = `equiv-${eq.ticker}-${holding.ticker}`
+                                    const equivOverride = editedTrades.find(t => t.id === equivTradeId)
+                                    const equivTradeAmt = equivOverride?.editTradeAmount ?? 0
+                                    const equivPost = eq.currentValue + equivTradeAmt
+                                    return (
+                                      <div key={eq.ticker + eIdx} style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 80px 90px 90px 90px 60px 60px 60px", padding: "7px 14px 7px 36px", gap: 8, alignItems: "center", borderBottom: eIdx === holding.equivalents.length - 1 ? "1px solid var(--border)" : "none", background: "rgba(68,136,255,0.04)" }}>
+                                        <span style={{ fontSize: 11, color: "#4488ff", textAlign: "center" }}>≈</span>
+                                        <div>
+                                          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                            <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "#4488ff" }}>{eq.ticker}</span>
+                                            <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 20, background: "#001030", color: "#4488ff", fontWeight: 700, border: "1px solid #4488ff33" }}>Equiv</span>
+                                          </div>
+                                          <div style={{ fontSize: 9, color: "var(--ink-faint)", marginTop: 1 }}>{eq.securityName.length > 40 ? eq.securityName.slice(0,38) + "…" : eq.securityName}</div>
                                         </div>
-                                        <div style={{ fontSize: 9, color: "var(--ink-faint)", marginTop: 1 }}>{eq.securityName.length > 40 ? eq.securityName.slice(0,38) + "…" : eq.securityName}</div>
+                                        {/* Editable trade for equiv — negative = sell */}
+                                        <div style={{ textAlign: "right" }}>
+                                          <input
+                                            value={equivTradeAmt === 0 ? "" : equivTradeAmt.toFixed(0)}
+                                            placeholder="0"
+                                            onChange={e => {
+                                              const val = parseFloat(e.target.value) || 0
+                                              // Add/update an override trade row for this equiv
+                                              setEditedTrades(prev => {
+                                                const existing = prev.find(t => t.id === equivTradeId)
+                                                if (existing) return prev.map(t => t.id === equivTradeId ? { ...t, editTradeAmount: val, tradeType: val < 0 ? "sell" as const : "buy" as const } : t)
+                                                return [...prev, {
+                                                  id: equivTradeId, accountId: "", accountNumber: "", ticker: eq.ticker, securityName: eq.securityName,
+                                                  tradeType: val < 0 ? "sell" as const : "buy" as const, tradeAmount: val, editTradeAmount: val,
+                                                  currentValue: eq.currentValue, targetValue: 0,
+                                                  unrealizedGL: eq.unrealizedGL, unrealizedGLST: 0, unrealizedGLLT: 0, isLongTerm: true,
+                                                  realizedGL: val < 0 ? eq.unrealizedGL * Math.abs(val) / eq.currentValue : 0,
+                                                  realizedGLST: 0, realizedGLLT: 0, estimatedTax: 0,
+                                                  msCategory: "", productClass: "", assetClass: group.assetClass,
+                                                  mappedTicker: holding.ticker, mappedName: holding.securityName,
+                                                  isSell: val < 0, isKeep: false, isEquivalent: true, mapScore: 0, userOverride: true,
+                                                }]
+                                              })
+                                            }}
+                                            style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: equivTradeAmt < 0 ? "#ff4488" : equivTradeAmt > 0 ? "#00f0c0" : "var(--ink-faint)", background: "transparent", border: "none", borderBottom: "1px dashed rgba(68,136,255,0.3)", outline: "none", width: 80, textAlign: "right", cursor: "text", pointerEvents: "all" }}
+                                          />
+                                        </div>
+                                        <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
+                                        <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "#4488ff" }}>{fmt$(eq.currentValue)}</span>
+                                        <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
+                                        <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "#4488ff" }}>{fmt$(equivPost)}</span>
+                                        <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "#4488ff" }}>{group.totalValue > 0 ? ((eq.currentValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}</span>
+                                        <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
+                                        <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "#4488ff" }}>{group.totalValue > 0 ? ((equivPost / group.totalValue) * 100).toFixed(1) + "%" : "—"}</span>
                                       </div>
-                                      <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
-                                      <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
-                                      <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "#4488ff" }}>{fmt$(eq.currentValue)}</span>
-                                      <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
-                                      <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "#4488ff" }}>{fmt$(eq.currentValue)}</span>
-                                      <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "#4488ff" }}>{group.totalValue > 0 ? ((eq.currentValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}</span>
-                                      <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
-                                      <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "#4488ff" }}>{group.totalValue > 0 ? ((eq.currentValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}</span>
-                                    </div>
-                                  ))}
+                                    )
+                                  })}
                                 </div>
                               )
                             })}
