@@ -216,9 +216,20 @@ export function buildTransition(
       }
     })
 
-    // In-model rebalancing
+    // Build equiv value map — how much of each model ticker is already satisfied by equivalents
+    const equivValueByTarget = new Map<string, number>()
+    processed.filter(p => p.action === "map").forEach(p => {
+      p.matches.forEach(m => {
+        const w = m.weight ?? 1
+        equivValueByTarget.set(m.ticker, (equivValueByTarget.get(m.ticker) || 0) + p.holding.currentValue * w)
+      })
+    })
+
+    // In-model rebalancing — subtract equiv value already held from each target
     account.inModel.forEach(h => {
-      const gap = h.targetValue - h.currentValue
+      const equivSatisfied = equivValueByTarget.get(h.ticker) || 0
+      const effectiveCurrent = h.currentValue + equivSatisfied
+      const gap = h.targetValue - effectiveCurrent
       if (Math.abs(gap) > 100) {
         const assetClass = inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass)
         const partialRatio = gap < 0 && h.currentValue > 0 ? Math.abs(gap) / h.currentValue : 0
