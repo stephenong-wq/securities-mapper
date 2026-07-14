@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { MODELS } from "@/lib/types"
 import type { ModelId, MappedSecurity, MorningstarRow, ModelUniverseRow } from "@/lib/types"
 import type { ImportResult, AccountData, ProcessedHolding } from "@/lib/importParser"
-import type { TransitionSummary, TradeRow, AssetClassGroup } from "@/lib/transitionEngine"
+import type { TransitionSummary, TradeRow, AssetClassGroup, HoldingRow, EquivRow } from "@/lib/transitionEngine"
 
 // ─── Status config ─────────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
@@ -1098,122 +1098,85 @@ export default function Home() {
                           </span>
                         </div>
 
-                        {/* Expanded holdings */}
+                        {/* Expanded holdings — grouped by security with equivalents nested */}
                         {isExpanded && (
                           <div style={{ borderTop: "1px solid var(--border)" }}>
-                            {/* Trades for this asset class */}
-                            {editedTrades.filter(t => t.assetClass === group.assetClass && !t.isEquivalent).map((trade, idx) => {
-                              const isBuy = trade.tradeType === "buy"
-                              const isSell = trade.tradeType === "sell"
-                              const dotColor = isBuy ? "#00f0c0" : isSell ? "#ff4488" : "#4488ff"
-                              const effectiveAmount = trade.editTradeAmount ?? trade.tradeAmount
+                            {(group.holdings || []).map((holding, hIdx) => {
+                              const isSell = holding.tradeAmount < 0
+                              const isBuy = holding.tradeAmount > 0
+                              const hasEquivs = holding.equivalents && holding.equivalents.length > 0
+                              const dotColor = isSell ? "#ff4488" : isBuy ? "#00f0c0" : "var(--ink-faint)"
+                              const editTrade = editedTrades.find(t => t.ticker === holding.ticker && t.assetClass === group.assetClass && !t.isEquivalent)
+                              const effectiveTradeAmt = editTrade ? (editTrade.editTradeAmount ?? editTrade.tradeAmount) : holding.tradeAmount
+                              const effectiveGL = editTrade?.realizedGL || holding.realizedGL
+                              const postVal = holding.effectiveCurrent + effectiveTradeAmt
 
                               return (
-                                <div key={trade.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 80px 90px 90px 90px 60px 60px 60px", padding: "9px 14px", gap: 8, alignItems: "center", borderBottom: "1px solid var(--border)", background: idx % 2 === 0 ? "var(--surface-sunken)" : "transparent" }}>
-                                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor, boxShadow: `0 0 4px ${dotColor}`, display: "inline-block", margin: "0 auto" }} />
-
-                                  <div>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: isBuy ? "var(--accent)" : "#ff4488" }}>
-                                        {/* Editable ticker for buys */}
-                                        {isBuy ? (
-                                          <input value={trade.ticker}
-                                            onChange={e => updateTrade(trade.id, "ticker", e.target.value.toUpperCase())}
-                                            style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "var(--accent)", background: "transparent", border: "none", borderBottom: "1px dashed rgba(0,200,255,0.4)", outline: "none", width: 70 }} />
-                                        ) : trade.ticker}
-                                      </span>
-                                      <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 20, background: isBuy ? "#001e18" : "#1e0018", color: dotColor, fontWeight: 700, border: `1px solid ${dotColor}33` }}>
-                                        {/* Editable buy/sell toggle */}
-                                        <select value={trade.tradeType}
-                                          onChange={e => updateTrade(trade.id, "tradeType", e.target.value)}
-                                          style={{ background: "transparent", border: "none", color: dotColor, fontWeight: 700, fontSize: 10, cursor: "pointer", outline: "none" }}>
-                                          <option value="buy">Buy</option>
-                                          <option value="sell">Sell</option>
-                                        </select>
-                                      </span>
-                                      {trade.isKeep && <span style={{ fontSize: 10, color: "var(--ink-faint)" }}>rebal</span>}
+                                <div key={holding.ticker + hIdx}>
+                                  <div style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 80px 90px 90px 90px 60px 60px 60px", padding: "10px 14px", gap: 8, alignItems: "center", borderBottom: hasEquivs ? "none" : "1px solid var(--border)", background: hIdx % 2 === 0 ? "var(--surface-sunken)" : "transparent" }}>
+                                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor, boxShadow: `0 0 4px ${dotColor}`, display: "inline-block", margin: "0 auto" }} />
+                                    <div>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: isSell ? "#ff4488" : isBuy ? "var(--accent)" : "var(--ink)" }}>
+                                          {editTrade && isBuy ? (
+                                            <input value={editTrade.ticker} onChange={e => updateTrade(editTrade.id, "ticker", e.target.value.toUpperCase())}
+                                              style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "var(--accent)", background: "transparent", border: "none", borderBottom: "1px dashed rgba(0,200,255,0.4)", outline: "none", width: 70 }} />
+                                          ) : holding.ticker}
+                                        </span>
+                                        {editTrade && (
+                                          <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 20, background: isSell ? "#1e0018" : "#001e18", color: dotColor, fontWeight: 700, border: `1px solid ${dotColor}33` }}>
+                                            <select value={editTrade.tradeType} onChange={e => updateTrade(editTrade.id, "tradeType", e.target.value)}
+                                              style={{ background: "transparent", border: "none", color: dotColor, fontWeight: 700, fontSize: 10, cursor: "pointer", outline: "none" }}>
+                                              <option value="buy">Buy</option>
+                                              <option value="sell">Sell</option>
+                                            </select>
+                                          </span>
+                                        )}
+                                        {editTrade?.isKeep && <span style={{ fontSize: 10, color: "var(--ink-faint)" }}>rebal</span>}
+                                        {hasEquivs && <span style={{ fontSize: 10, color: "#4488ff", opacity: 0.8 }}>+{holding.equivalents.length} equiv</span>}
+                                      </div>
+                                      <div style={{ fontSize: 10, color: "var(--ink-faint)", marginTop: 2 }}>{holding.securityName.length > 36 ? holding.securityName.slice(0,34) + "…" : holding.securityName}</div>
                                     </div>
-                                    <div style={{ fontSize: 10, color: "var(--ink-faint)", marginTop: 2 }}>
-                                      {trade.securityName.length > 36 ? trade.securityName.slice(0,34) + "…" : trade.securityName}
+                                    <div style={{ textAlign: "right" }}>
+                                      {editTrade ? (
+                                        <input value={Math.abs(effectiveTradeAmt).toFixed(0)}
+                                          onChange={e => { const val = parseFloat(e.target.value) || 0; updateTrade(editTrade.id, "editTradeAmount", isSell ? -val : val) }}
+                                          style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: isSell ? "#ff4488" : "#00f0c0", background: "transparent", border: "none", borderBottom: "1px dashed rgba(255,255,255,0.15)", outline: "none", width: 80, textAlign: "right" }} />
+                                      ) : <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>}
                                     </div>
+                                    <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: effectiveGL < 0 ? "#ff4488" : effectiveGL > 0 ? "#00f0c0" : "var(--ink-faint)" }}>{effectiveGL !== 0 ? fmt$(effectiveGL) : "—"}</span>
+                                    <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{fmt$(holding.effectiveCurrent)}</span>
+                                    <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{holding.targetValue > 0 ? fmt$(holding.targetValue) : "—"}</span>
+                                    <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{fmt$(postVal)}</span>
+                                    <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>{group.totalValue > 0 ? ((holding.effectiveCurrent / group.totalValue) * 100).toFixed(1) + "%" : "—"}</span>
+                                    <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>{group.totalValue > 0 && holding.targetValue > 0 ? ((holding.targetValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}</span>
+                                    <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>{group.totalValue > 0 ? ((postVal / group.totalValue) * 100).toFixed(1) + "%" : "—"}</span>
                                   </div>
-
-                                  {/* Editable trade amount */}
-                                  <div style={{ textAlign: "right" }}>
-                                    <input
-                                      value={Math.abs(effectiveAmount).toFixed(0)}
-                                      onChange={e => {
-                                        const val = parseFloat(e.target.value) || 0
-                                        updateTrade(trade.id, "editTradeAmount", isSell ? -val : val)
-                                      }}
-                                      style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: isBuy ? "#00f0c0" : "#ff4488", background: "transparent", border: "none", borderBottom: "1px dashed rgba(255,255,255,0.15)", outline: "none", width: 80, textAlign: "right" }}
-                                    />
-                                  </div>
-
-                                  {/* G/L $ */}
-                                  <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: trade.realizedGL < 0 ? "#ff4488" : trade.realizedGL > 0 ? "#00f0c0" : "var(--ink-faint)" }}>
-                                    {trade.realizedGL !== 0 ? fmt$(trade.realizedGL) : "—"}
-                                  </span>
-
-                                  {/* Current $ */}
-                                  <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{fmt$(trade.currentValue)}</span>
-
-                                  {/* Target $ */}
-                                  <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{trade.targetValue > 0 ? fmt$(trade.targetValue) : "—"}</span>
-
-                                  {/* Post $ */}
-                                  <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>
-                                    {fmt$(trade.currentValue + (trade.editTradeAmount ?? trade.tradeAmount))}
-                                  </span>
-
-                                  {/* Current % */}
-                                  <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>
-                                    {group.totalValue > 0 ? ((trade.currentValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}
-                                  </span>
-
-                                  {/* Target % */}
-                                  <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>
-                                    {group.totalValue > 0 && trade.targetValue > 0 ? ((trade.targetValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}
-                                  </span>
-
-                                  {/* Post % */}
-                                  <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>
-                                    {group.totalValue > 0 ? (((trade.currentValue + (trade.editTradeAmount ?? trade.tradeAmount)) / group.totalValue) * 100).toFixed(1) + "%" : "—"}
-                                  </span>
+                                  {hasEquivs && holding.equivalents.map((eq, eIdx) => (
+                                    <div key={eq.ticker + eIdx} style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 80px 90px 90px 90px 60px 60px 60px", padding: "7px 14px 7px 36px", gap: 8, alignItems: "center", borderBottom: eIdx === holding.equivalents.length - 1 ? "1px solid var(--border)" : "none", background: "rgba(68,136,255,0.04)" }}>
+                                      <span style={{ fontSize: 11, color: "#4488ff", textAlign: "center" }}>≈</span>
+                                      <div>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: "#4488ff" }}>{eq.ticker}</span>
+                                          <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 20, background: "#001030", color: "#4488ff", fontWeight: 700, border: "1px solid #4488ff33" }}>Equiv</span>
+                                        </div>
+                                        <div style={{ fontSize: 9, color: "var(--ink-faint)", marginTop: 1 }}>{eq.securityName.length > 40 ? eq.securityName.slice(0,38) + "…" : eq.securityName}</div>
+                                      </div>
+                                      <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
+                                      <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
+                                      <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "#4488ff" }}>{fmt$(eq.currentValue)}</span>
+                                      <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
+                                      <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "#4488ff" }}>{fmt$(eq.currentValue)}</span>
+                                      <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "#4488ff" }}>{group.totalValue > 0 ? ((eq.currentValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}</span>
+                                      <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
+                                      <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "#4488ff" }}>{group.totalValue > 0 ? ((eq.currentValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}</span>
+                                    </div>
+                                  ))}
                                 </div>
                               )
                             })}
-
-                            {/* Equivalent holdings */}
-                            {editedTrades.filter(t => t.isEquivalent && t.assetClass === group.assetClass).map((trade, idx) => (
-                              <div key={trade.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 80px 90px 90px 90px 60px 60px 60px", padding: "8px 14px", gap: 8, alignItems: "center", borderBottom: "1px solid var(--border)", background: "rgba(68,136,255,0.03)" }}>
-                                <span style={{ fontSize: 12, color: "#4488ff", textAlign: "center" }}>≈</span>
-                                <div>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: "#4488ff" }}>{trade.ticker}</span>
-                                    <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 20, background: "#001030", color: "#4488ff", fontWeight: 700, border: "1px solid #4488ff33" }}>Equiv</span>
-                                    {trade.mappedTicker && <span style={{ fontSize: 10, color: "var(--ink-faint)" }}>of {trade.mappedTicker}</span>}
-                                  </div>
-                                  <div style={{ fontSize: 10, color: "var(--ink-faint)", marginTop: 2 }}>{trade.securityName.length > 36 ? trade.securityName.slice(0,34) + "…" : trade.securityName}</div>
-                                </div>
-                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
-                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
-                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{fmt$(trade.currentValue)}</span>
-                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
-                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
-                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{fmt$(trade.currentValue)}</span>
-                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>
-                                  {group.totalValue > 0 ? ((trade.currentValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}
-                                </span>
-                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
-                                <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>
-                                  {group.totalValue > 0 ? ((trade.currentValue / group.totalValue) * 100).toFixed(1) + "%" : "—"}
-                                </span>
-                              </div>
-                            ))}
                           </div>
-                        )}
-                      </div>
+                        )}                      </div>
                     )
                   })}
                 </div>
