@@ -295,7 +295,35 @@ export function buildTransition(
       trades.push(t)
     }
   })
-  buyMap.forEach(t => trades.push(t))
+
+  // ── Cap buys at class level — don't buy beyond class target ───────────────
+  // Calculate current value + equiv per asset class
+  const classSells = new Map<string, number>()
+  trades.filter(t => t.tradeType === "sell").forEach(t => {
+    classSells.set(t.assetClass, (classSells.get(t.assetClass) || 0) + Math.abs(t.tradeAmount))
+  })
+
+  buyMap.forEach(t => {
+    const classTarget = accounts.reduce((sum, acct) =>
+      sum + acct.inModel.filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === t.assetClass)
+        .reduce((s, h) => s + h.targetValue, 0), 0)
+    const classCurrentValue = accounts.reduce((sum, acct) =>
+      sum + [...acct.inModel, ...acct.unassigned]
+        .filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === t.assetClass)
+        .reduce((s, h) => s + h.currentValue, 0), 0)
+    const classEquivValue = Array.from(globalEquivByTarget.entries())
+      .filter(([ticker]) => {
+        const m = accounts.flatMap(a => a.inModel).find(h => h.ticker === ticker)
+        return m && inferDisplayAssetClass(m.msCategory, m.productClass, m.modelClass) === t.assetClass
+      })
+      .reduce((s, [, v]) => s + v, 0)
+    const classEffectiveCurrent = classCurrentValue + classEquivValue
+    const classGap = classTarget - classEffectiveCurrent
+    // Only buy up to the class gap (don't overshoot target)
+    if (classGap <= 0) return  // class already at/above target, skip buy
+    t.tradeAmount = Math.min(t.tradeAmount, classGap)
+    if (t.tradeAmount > 100) trades.push(t)
+  })
 
   const sells = trades.filter(t => t.tradeType === "sell")
   const totalTradeGL = sells.reduce((s, t) => s + t.realizedGL, 0)
@@ -330,11 +358,16 @@ function buildAssetAllocation(accounts: AccountData[], trades: TradeRow[], total
     })
   })
 
+  // Add Cash class
+  classSet.add("Cash")
+
   return Array.from(classSet).map(ac => {
-    const currentValue = accounts.reduce((sum, acct) =>
-      sum + [...acct.inModel, ...acct.unassigned]
-        .filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === ac)
-        .reduce((s, h) => s + h.currentValue, 0), 0)
+    const currentValue = ac === "Cash"
+      ? accounts.reduce((sum, acct) => sum + (acct.cashValue || 0), 0)
+      : accounts.reduce((sum, acct) =>
+          sum + [...acct.inModel, ...acct.unassigned]
+            .filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === ac)
+            .reduce((s, h) => s + h.currentValue, 0), 0)
 
     // tradeAmount = net of buys and sells (equivalents have tradeAmount=0, so excluded)
     const tradeAmount = trades
