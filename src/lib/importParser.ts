@@ -38,6 +38,7 @@ export interface AccountData {
   modelName: string
   inModel: ImportHolding[]
   unassigned: ImportHolding[]
+  cashValue: number
 }
 
 export interface ImportResult {
@@ -275,7 +276,7 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
     const target         = targetMap.get(ticker) || { targetValue: 0, targetPct: 0 }
 
     if (!accountMap.has(accountNumber)) {
-      accountMap.set(accountNumber, { accountNumber, modelCategories: [], inModel: [], unassigned: [] })
+      accountMap.set(accountNumber, { accountNumber, modelCategories: [], inModel: [], unassigned: [], cashValue: 0 })
     }
     const acct = accountMap.get(accountNumber)!
     if (modelCategory && modelCategory !== "Unassigned" && modelCategory !== "Cash") {
@@ -290,7 +291,10 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
     }
 
     if (secSet === "Unassigned") acct.unassigned.push(holding)
-    else if (secSet !== "Cash") acct.inModel.push(holding)
+    else if (secSet === "Cash" || ticker === "CUSTODIAL_CASH") {
+      acct.cashValue = (acct.cashValue || 0) + currentValue
+    }
+    else acct.inModel.push(holding)
   })
 
   const allModelCategories = Array.from(accountMap.values()).flatMap(a => a.modelCategories)
@@ -302,6 +306,7 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
     modelName: extractModelName(data.modelCategories),
     inModel: data.inModel,
     unassigned: data.unassigned,
+    cashValue: data.cashValue || 0,
   }))
 
   return { accounts, modelName: overallModelName }
