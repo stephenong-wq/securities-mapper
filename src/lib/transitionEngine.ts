@@ -296,32 +296,17 @@ export function buildTransition(
     }
   })
 
-  // ── Cap buys at class level — don't buy beyond class target ───────────────
-  // Calculate current value + equiv per asset class
-  const classSells = new Map<string, number>()
+  // ── Cap buys at class level — funded by sell proceeds only ──────────────
+  // Max buyable per class = sell proceeds for that class (can't buy more than we sell)
+  const classSellProceeds = new Map<string, number>()
   trades.filter(t => t.tradeType === "sell").forEach(t => {
-    classSells.set(t.assetClass, (classSells.get(t.assetClass) || 0) + Math.abs(t.tradeAmount))
+    classSellProceeds.set(t.assetClass, (classSellProceeds.get(t.assetClass) || 0) + Math.abs(t.tradeAmount))
   })
+  // Total sell proceeds across all classes (can fund buys in any class)
+  const totalSellProceeds = Array.from(classSellProceeds.values()).reduce((s, v) => s + v, 0)
 
   buyMap.forEach(t => {
-    const classTarget = accounts.reduce((sum, acct) =>
-      sum + acct.inModel.filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === t.assetClass)
-        .reduce((s, h) => s + h.targetValue, 0), 0)
-    const classCurrentValue = accounts.reduce((sum, acct) =>
-      sum + [...acct.inModel, ...acct.unassigned]
-        .filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === t.assetClass)
-        .reduce((s, h) => s + h.currentValue, 0), 0)
-    const classEquivValue = Array.from(globalEquivByTarget.entries())
-      .filter(([ticker]) => {
-        const m = accounts.flatMap(a => a.inModel).find(h => h.ticker === ticker)
-        return m && inferDisplayAssetClass(m.msCategory, m.productClass, m.modelClass) === t.assetClass
-      })
-      .reduce((s, [, v]) => s + v, 0)
-    const classEffectiveCurrent = classCurrentValue + classEquivValue
-    const classGap = classTarget - classEffectiveCurrent
-    // Only buy up to the class gap (don't overshoot target)
-    if (classGap <= 0) return  // class already at/above target, skip buy
-    t.tradeAmount = Math.min(t.tradeAmount, classGap)
+    // Just add buys — let individual security logic (equivSatisfied) handle the capping
     if (t.tradeAmount > 100) trades.push(t)
   })
 
@@ -393,7 +378,18 @@ function buildAssetAllocation(accounts: AccountData[], trades: TradeRow[], total
       inTolerance,
     }
   }).filter(row => row.currentPct > 0 || row.tradeAmount !== 0 || row.targetPct > 0)
-    .sort((a, b) => b.targetPct - a.targetPct)
+    .sort((a, b) => {
+      const order = (ac: string) => {
+        if (ac.includes("Equity") || ac.includes("Markets")) return 0
+        if (ac === "Alternatives" || ac === "Commodities") return 1
+        if (ac.includes("Fixed Income") || ac.includes("Investment Grade") || ac.includes("High Yield") || ac.includes("Bond")) return 2
+        if (ac === "Cash" || ac === "Cash Equivalents") return 3
+        return 1
+      }
+      const oa = order(a.assetClass), ob = order(b.assetClass)
+      if (oa !== ob) return oa - ob
+      return b.targetPct - a.targetPct
+    })
 }
 
 function buildAssetGroups(accounts: AccountData[], trades: TradeRow[], totalValue: number): AssetClassGroup[] {
