@@ -230,7 +230,12 @@ export function buildTransition(
       const equivSatisfied = equivValueByTarget.get(h.ticker) || 0
       const effectiveCurrent = h.currentValue + equivSatisfied
       const gap = h.targetValue - effectiveCurrent
-      if (Math.abs(gap) > 100) {
+      // Skip: if we don't actually hold this security and gap is negative (equiv makes it overweight)
+      // — the overweight is handled by the equivalents themselves, no trade needed
+      if (gap < 0 && h.currentValue === 0) return
+      // Skip small gaps
+      if (Math.abs(gap) <= 100) return
+      if (true) {
         const assetClass = inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass)
         const partialRatio = gap < 0 && h.currentValue > 0 ? Math.abs(gap) / h.currentValue : 0
         const realizedGLLT = gap < 0 ? h.unrealizedGLLT * partialRatio : 0
