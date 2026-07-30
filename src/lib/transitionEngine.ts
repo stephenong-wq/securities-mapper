@@ -186,6 +186,11 @@ export function buildTransition(
 
       if (isMap) {
         // Mapped equivalent — no actual trade, just track as equivalent
+        // Use the TARGET's asset class (from its modelClass) not the unassigned holding's category
+        const targetModelClass = account.inModel.find(m => m.ticker === p.matches[0]?.ticker)?.modelClass || ""
+        const equivAssetClass = targetModelClass
+          ? inferDisplayAssetClass(p.matches[0]?.msCategory || h.msCategory, h.productClass, targetModelClass)
+          : assetClass
         rawTrades.push({
           id: `${accountId}-${h.ticker}-equiv`,
           accountId, accountNumber,
@@ -195,7 +200,7 @@ export function buildTransition(
           unrealizedGL: h.unrealizedGL, unrealizedGLST: h.unrealizedGLST, unrealizedGLLT: h.unrealizedGLLT,
           isLongTerm: h.isLongTerm,
           realizedGL: 0, realizedGLST: 0, realizedGLLT: 0, estimatedTax: 0,
-          msCategory: h.msCategory, productClass: h.productClass, assetClass,
+          msCategory: h.msCategory, productClass: h.productClass, assetClass: equivAssetClass,
           mappedTicker: p.matches[0]?.ticker || "", mappedName: p.matches[0]?.name || "",
           isSell: false, isKeep: false, isEquivalent: true, mapScore: p.mapScore, userOverride: false,
         })
@@ -238,7 +243,7 @@ export function buildTransition(
               currentValue: m.currentValue, targetValue: m.targetValue,
               unrealizedGL: 0, unrealizedGLST: 0, unrealizedGLLT: 0, isLongTerm: true,
               realizedGL: 0, realizedGLST: 0, realizedGLLT: 0, estimatedTax: 0,
-              msCategory: m.msCategory, productClass: "", assetClass: inferDisplayAssetClass(m.msCategory, m.msCategory, account.inModel.find(h => h.ticker === m.ticker)?.modelClass || ""),
+              msCategory: m.msCategory, productClass: "", assetClass: inferDisplayAssetClass(m.msCategory, "", ""),
               mappedTicker: m.ticker, mappedName: m.name,
               isSell: false, isKeep: false, isEquivalent: false, mapScore: 0, userOverride: false,
             })
