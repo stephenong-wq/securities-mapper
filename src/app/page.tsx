@@ -1039,38 +1039,7 @@ export default function Home() {
                     <span style={{ textAlign: "right" }}>Post %</span>
                   </div>
 
-                  {/* Cash row — with target from Asset Classification */}
-                  {(() => {
-                    const currentCash = transition.currentCash || 0
-                    const netCash = transition.netCashFromTrades || 0
-                    const postCash = Math.max(0, currentCash + netCash)
-                    const cashTarget = (transition.assetGroups || []).find(g => g.assetClass === "Cash")?.targetValue || 0
-                    const cashPct = transition.totalValue > 0 ? currentCash / transition.totalValue : 0
-                    const cashTgtPct = transition.totalValue > 0 ? cashTarget / transition.totalValue : 0
-                    const postCashPct = transition.totalValue > 0 ? postCash / transition.totalValue : 0
-                    const inTol = cashTgtPct > 0 ? Math.abs(postCashPct - cashTgtPct) <= cashTgtPct * 0.25 : postCashPct === 0
-                    if (currentCash <= 0 && netCash === 0) return null
-                    return (
-                      <div style={{ background: "var(--surface-raised)", border: `1px solid ${inTol ? "var(--border)" : "#ff448844"}`, borderRadius: 10, overflow: "hidden" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 80px 90px 90px 90px 60px 60px 60px", padding: "12px 14px", gap: 8, alignItems: "center" }}>
-                          <span style={{ fontSize: 14, color: inTol ? "#00f0c0" : "#ff4488" }}>{inTol ? "✓" : "✗"}</span>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>Cash</span>
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: netCash >= 0 ? "#00f0c0" : "#ff4488" }}>
-                            {netCash !== 0 ? `${netCash > 0 ? "+" : ""}${fmt$(netCash)}` : "—"}
-                          </span>
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-muted)" }}>{fmt$(currentCash)}</span>
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-muted)" }}>{cashTarget > 0 ? fmt$(cashTarget) : "—"}</span>
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: inTol ? "#00f0c0" : "#ff4488" }}>{fmt$(postCash)}</span>
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>{(cashPct * 100).toFixed(1)}%</span>
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>{cashTarget > 0 ? (cashTgtPct * 100).toFixed(1) + "%" : "—"}</span>
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: inTol ? "#00f0c0" : "#ff4488" }}>{(postCashPct * 100).toFixed(1)}%</span>
-                        </div>
-                      </div>
-                    )
-                  })()}
-
-                  {(transition.assetGroups || []).filter(g => g.assetClass !== "Cash").map(group => {
+                                    {(transition.assetGroups || []).filter(g => g.assetClass !== "Cash").map(group => {
                     const isExpanded = expandedAssetClasses.has(group.assetClass)
                     const tradeDiff = group.tradeAmount
                     const diffFromTarget = group.postTradeValue - group.targetValue
@@ -1271,6 +1240,37 @@ export default function Home() {
                         )}                      </div>
                     )
                   })}
+
+                  {/* Cash row — with target from Asset Classification */}
+                  {(() => {
+                    const currentCash = transition.currentCash || 0
+                    const netCash = transition.netCashFromTrades || 0
+                    const postCash = Math.max(0, currentCash + netCash)
+                    const cashTarget = (transition.assetGroups || []).find(g => g.assetClass === "Cash")?.targetValue || 0
+                    const cashPct = transition.totalValue > 0 ? currentCash / transition.totalValue : 0
+                    const cashTgtPct = transition.totalValue > 0 ? cashTarget / transition.totalValue : 0
+                    const postCashPct = transition.totalValue > 0 ? postCash / transition.totalValue : 0
+                    const inTol = cashTgtPct > 0 ? Math.abs(postCashPct - cashTgtPct) <= cashTgtPct * 0.25 : postCashPct === 0
+                    if (currentCash <= 0 && netCash === 0) return null
+                    return (
+                      <div style={{ background: "var(--surface-raised)", border: `1px solid ${inTol ? "var(--border)" : "#ff448844"}`, borderRadius: 10, overflow: "hidden" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 80px 90px 90px 90px 60px 60px 60px", padding: "12px 14px", gap: 8, alignItems: "center" }}>
+                          <span style={{ fontSize: 14, color: inTol ? "#00f0c0" : "#ff4488" }}>{inTol ? "✓" : "✗"}</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>Cash</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: netCash >= 0 ? "#00f0c0" : "#ff4488" }}>
+                            {netCash !== 0 ? `${netCash > 0 ? "+" : ""}${fmt$(netCash)}` : "—"}
+                          </span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-muted)" }}>{fmt$(currentCash)}</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-muted)" }}>{cashTarget > 0 ? fmt$(cashTarget) : "—"}</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: inTol ? "#00f0c0" : "#ff4488" }}>{fmt$(postCash)}</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>{(cashPct * 100).toFixed(1)}%</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>{cashTarget > 0 ? (cashTgtPct * 100).toFixed(1) + "%" : "—"}</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: inTol ? "#00f0c0" : "#ff4488" }}>{(postCashPct * 100).toFixed(1)}%</span>
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
               )}
             </div>
