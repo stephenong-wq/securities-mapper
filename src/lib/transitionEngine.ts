@@ -87,6 +87,8 @@ export interface TransitionSummary {
   losses: number
   numTrades: number
   totalRealizedGL: number
+  netCashFromTrades: number  // sells - buys = net cash change
+  currentCash: number
   assetAllocation: AssetAllocationRow[]
   assetGroups: AssetClassGroup[]
   trades: TradeRow[]
@@ -296,18 +298,47 @@ export function buildTransition(
     }
   })
 
-  // ── Cap buys at class level — funded by sell proceeds only ──────────────
-  // Max buyable per class = sell proceeds for that class (can't buy more than we sell)
-  const classSellProceeds = new Map<string, number>()
-  trades.filter(t => t.tradeType === "sell").forEach(t => {
-    classSellProceeds.set(t.assetClass, (classSellProceeds.get(t.assetClass) || 0) + Math.abs(t.tradeAmount))
-  })
-  // Total sell proceeds across all classes (can fund buys in any class)
-  const totalSellProceeds = Array.from(classSellProceeds.values()).reduce((s, v) => s + v, 0)
+  // ── Cap buys at class level — don't push class beyond target ────────────
+  // For each class, calculate effective current (raw holdings, no equiv) + any buys already added
+  // Cap total class buys so post-trade stays within TOLERANCE_BAND of target
 
+  // Group buyMap by asset class
+  const buysByClass = new Map<string, TradeRow[]>()
   buyMap.forEach(t => {
-    // Just add buys — let individual security logic (equivSatisfied) handle the capping
-    if (t.tradeAmount > 100) trades.push(t)
+    if (!buysByClass.has(t.assetClass)) buysByClass.set(t.assetClass, [])
+    buysByClass.get(t.assetClass)!.push(t)
+  })
+
+  buysByClass.forEach((classBuys, assetClass) => {
+    // Current raw value for this class (no equiv)
+    const classCurrentRaw = accounts.reduce((sum, acct) =>
+      sum + [...acct.inModel, ...acct.unassigned]
+        .filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === assetClass)
+        .reduce((s, h) => s + h.currentValue, 0), 0)
+
+    // Target for this class
+    const classTarget = accounts.reduce((sum, acct) =>
+      sum + acct.inModel.filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === assetClass)
+        .reduce((s, h) => s + h.targetValue, 0), 0)
+
+    // Sells within this class free up room
+    const classSellAmt = trades.filter(t => t.tradeType === "sell" && t.assetClass === assetClass)
+      .reduce((s, t) => s + Math.abs(t.tradeAmount), 0)
+
+    // Max we can add to this class = target - (current - sells)
+    const currentAfterSells = classCurrentRaw - classSellAmt
+    const maxClassBuy = Math.max(0, classTarget - currentAfterSells)
+
+    // Cap total buys for this class
+    let remainingBuyRoom = maxClassBuy
+    classBuys.forEach(t => {
+      if (remainingBuyRoom <= 100) return  // no room left
+      t.tradeAmount = Math.min(t.tradeAmount, remainingBuyRoom)
+      if (t.tradeAmount > 100) {
+        trades.push(t)
+        remainingBuyRoom -= t.tradeAmount
+      }
+    })
   })
 
   const sells = trades.filter(t => t.tradeType === "sell")
@@ -324,12 +355,18 @@ export function buildTransition(
     value: [...a.inModel, ...a.unassigned].reduce((s, h) => s + h.currentValue, 0),
   }))
 
+  const totalSells = trades.filter(t => t.tradeType === "sell").reduce((s,t) => s + Math.abs(t.tradeAmount), 0)
+  const totalBuys  = trades.filter(t => t.tradeType === "buy").reduce((s,t) => s + t.tradeAmount, 0)
+  const netCashFromTrades = totalSells - totalBuys
+  const currentCash = accounts.reduce((s, a) => s + (a.cashValue || 0), 0)
+
   return {
     clientName, modelName, date, totalValue,
     totalTradeGL, estimatedTax,
     taxImpactPct: totalValue > 0 ? estimatedTax / totalValue : 0,
     ltGains, stGains, losses,
     totalRealizedGL: ltGains + stGains + losses,
+    netCashFromTrades, currentCash,
     numTrades: trades.filter(t => t.tradeType !== "equivalent").length,
     assetAllocation, assetGroups, trades, accounts: accountSummary,
   }
