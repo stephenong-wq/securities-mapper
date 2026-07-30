@@ -195,7 +195,14 @@ export function buildTransition(
           unrealizedGL: h.unrealizedGL, unrealizedGLST: h.unrealizedGLST, unrealizedGLLT: h.unrealizedGLLT,
           isLongTerm: h.isLongTerm,
           realizedGL: 0, realizedGLST: 0, realizedGLLT: 0, estimatedTax: 0,
-          msCategory: h.msCategory, productClass: h.productClass, assetClass,
+          msCategory: h.msCategory, productClass: h.productClass,
+          assetClass: p.matches[0]
+            ? inferDisplayAssetClass(
+                p.matches[0].msCategory,
+                account.inModel.find(m => m.ticker === p.matches[0]!.ticker)?.productClass || "",
+                account.inModel.find(m => m.ticker === p.matches[0]!.ticker)?.modelClass || ""
+              )
+            : assetClass,
           mappedTicker: p.matches[0]?.ticker || "", mappedName: p.matches[0]?.name || "",
           isSell: false, isKeep: false, isEquivalent: true, mapScore: p.mapScore, userOverride: false,
         })
