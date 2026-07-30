@@ -299,11 +299,11 @@ export function buildTransition(
             isSell: false, isKeep: true, isEquivalent: false, mapScore: 10, userOverride: false,
           })
         })
-      } else if (classGap < -100 && classRawCurrent > 0) {
+      } else if (classGap < -100 && classInModelCurrent > 0) {
         // Overweight — sell proportionally from securities we actually hold
         const overweight = Math.abs(classGap)
         classHoldings.filter(h => h.currentValue > 0).forEach(h => {
-          const sellAmt = Math.min(h.currentValue, overweight * (h.currentValue / classRawCurrent))
+          const sellAmt = Math.min(h.currentValue, overweight * (h.currentValue / classInModelCurrent))
           if (sellAmt < 100) return
           const pr = sellAmt / h.currentValue
           const realizedGLLT = (h.unrealizedGLLT || 0) * pr
