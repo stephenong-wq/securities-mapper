@@ -267,20 +267,13 @@ export function buildTransition(
     })
 
     classGroups.forEach((classHoldings, assetClass) => {
-      const classRawCurrent = classHoldings.reduce((s, h) => s + h.currentValue, 0)
+      // Only count in-model holdings as current (unassigned are being sold or kept as equiv)
+      const classInModelCurrent = classHoldings.reduce((s, h) => s + h.currentValue, 0)
+      // Equiv value = unassigned mapped positions that satisfy this class target
       const classEquivValue = classHoldings.reduce((s, h) => s + (globalEquivByTarget.get(h.ticker) || 0), 0)
-      const classEffCurrent = classRawCurrent + classEquivValue
+      const classEffCurrent = classInModelCurrent + classEquivValue
       const classTarget = classHoldings.reduce((s, h) => s + h.targetValue, 0)
-
-      // Sells of unassigned already in rawTrades for this class
-      const existingSells = rawTrades.filter(t =>
-        t.tradeType === "sell" && t.assetClass === assetClass && t.accountId === accountId
-      ).reduce((s, t) => s + Math.abs(t.tradeAmount), 0)
-
-      const classAfterSells = classEffCurrent - existingSells
-      const classGap = classTarget - classAfterSells  // positive = underweight, negative = overweight
-      const totalValue = account.inModel.reduce((s, h) => s + h.currentValue, 0) +
-        account.unassigned.reduce((s, h) => s + h.currentValue, 0) + (account.cashValue || 0)
+      const classGap = classTarget - classEffCurrent  // positive = underweight, negative = overweight
 
       if (classGap > 100) {
         // Underweight — distribute buy across securities proportional to their individual gap
@@ -385,16 +378,14 @@ export function buildTransition(
         return m && inferDisplayAssetClass(m.msCategory, m.productClass, m.modelClass) === assetClass
       })
       .reduce((s, [, v]) => s + v, 0)
-    const classCurrentRaw = accounts.reduce((sum, acct) =>
-      sum + [...acct.inModel, ...acct.unassigned]
-        .filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === assetClass)
+    // Only in-model holdings count as current (unassigned are sold or kept as equiv)
+    const classInModelRaw = accounts.reduce((sum, acct) =>
+      sum + acct.inModel.filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === assetClass)
         .reduce((s, h) => s + h.currentValue, 0), 0)
     const classTarget = accounts.reduce((sum, acct) =>
       sum + acct.inModel.filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === assetClass)
         .reduce((s, h) => s + h.targetValue, 0), 0)
-    const classSellAmt = trades.filter(t => t.tradeType === "sell" && t.assetClass === assetClass)
-      .reduce((s, t) => s + Math.abs(t.tradeAmount), 0)
-    const classEffCurrent = classCurrentRaw + classEquivValue - classSellAmt
+    const classEffCurrent = classInModelRaw + classEquivValue
     const maxClassBuy = Math.max(0, classTarget - classEffCurrent)
 
     // Cap by both class target gap and available cash
