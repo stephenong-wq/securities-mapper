@@ -265,7 +265,7 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
 
   holdingRows.forEach(row => {
     const ticker = String(row["Ticker"] || "").trim().toUpperCase()
-    if (!ticker || ticker === "CUSTODIAL_CASH") return
+    if (!ticker) return
 
     const accountNumber  = String(row["Account Number"] || "").trim()
     const secSet         = String(row["Sec. Set"] || "").trim()
