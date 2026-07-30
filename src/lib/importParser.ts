@@ -39,6 +39,7 @@ export interface AccountData {
   inModel: ImportHolding[]
   unassigned: ImportHolding[]
   cashValue: number
+  cashTarget: number
 }
 
 export interface ImportResult {
@@ -225,11 +226,17 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
 
   const assetSheet = wb.Sheets["Asset Classification"]
   const targetMap = new Map<string, { targetValue: number; targetPct: number }>()
+  let cashTargetFromSheet = 0
   if (assetSheet) {
     const assetRows = XLSX.utils.sheet_to_json<Record<string, string | number>>(assetSheet, { defval: "" })
     assetRows.forEach(row => {
       const ticker = String(row["Security"] || "").trim().toUpperCase()
-      if (ticker) targetMap.set(ticker, {
+      if (!ticker) return
+      if (ticker === "CASH") {
+        cashTargetFromSheet = parseFloat(String(row["Target $"] || "0")) || 0
+        return
+      }
+      targetMap.set(ticker, {
         targetValue: parseFloat(String(row["Target $"] || "0")) || 0,
         targetPct: parseFloat(String(row["Target %"] || "0")) || 0,
       })
@@ -253,6 +260,7 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
     inModel: ImportHolding[]
     unassigned: ImportHolding[]
     cashValue: number
+    cashTarget: number
   }>()
 
   holdingRows.forEach(row => {
@@ -277,7 +285,7 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
     const target         = targetMap.get(ticker) || { targetValue: 0, targetPct: 0 }
 
     if (!accountMap.has(accountNumber)) {
-      accountMap.set(accountNumber, { accountNumber, modelCategories: [], inModel: [], unassigned: [], cashValue: 0 })
+      accountMap.set(accountNumber, { accountNumber, modelCategories: [], inModel: [], unassigned: [], cashValue: 0, cashTarget: 0 })
     }
     const acct = accountMap.get(accountNumber)!
     if (modelCategory && modelCategory !== "Unassigned" && modelCategory !== "Cash") {
@@ -301,14 +309,23 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
   const allModelCategories = Array.from(accountMap.values()).flatMap(a => a.modelCategories)
   const overallModelName = extractModelName(allModelCategories)
 
-  const accounts: AccountData[] = Array.from(accountMap.entries()).map(([accountNumber, data]) => ({
-    accountId: accountNumber, accountNumber,
-    regType: regTypeMap.get(accountNumber) || "",
-    modelName: extractModelName(data.modelCategories),
-    inModel: data.inModel,
-    unassigned: data.unassigned,
-    cashValue: data.cashValue || 0,
-  }))
+  // Distribute cash target proportionally across accounts by account value
+  const totalAccountValue = Array.from(accountMap.values()).reduce((s, d) =>
+    s + [...d.inModel, ...d.unassigned].reduce((ss, h) => ss + h.currentValue, 0) + (d.cashValue || 0), 0)
+
+  const accounts: AccountData[] = Array.from(accountMap.entries()).map(([accountNumber, data]) => {
+    const acctValue = [...data.inModel, ...data.unassigned].reduce((s, h) => s + h.currentValue, 0) + (data.cashValue || 0)
+    const cashTargetShare = totalAccountValue > 0 ? (acctValue / totalAccountValue) * cashTargetFromSheet : 0
+    return {
+      accountId: accountNumber, accountNumber,
+      regType: regTypeMap.get(accountNumber) || "",
+      modelName: extractModelName(data.modelCategories),
+      inModel: data.inModel,
+      unassigned: data.unassigned,
+      cashValue: data.cashValue || 0,
+      cashTarget: cashTargetShare,
+    }
+  })
 
   return { accounts, modelName: overallModelName }
 }
