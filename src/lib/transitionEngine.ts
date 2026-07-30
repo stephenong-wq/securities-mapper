@@ -238,7 +238,7 @@ export function buildTransition(
               currentValue: m.currentValue, targetValue: m.targetValue,
               unrealizedGL: 0, unrealizedGLST: 0, unrealizedGLLT: 0, isLongTerm: true,
               realizedGL: 0, realizedGLST: 0, realizedGLLT: 0, estimatedTax: 0,
-              msCategory: m.msCategory, productClass: "", assetClass: inferDisplayAssetClass(m.msCategory, "", ""),
+              msCategory: m.msCategory, productClass: "", assetClass: inferDisplayAssetClass(m.msCategory, m.msCategory, account.inModel.find(h => h.ticker === m.ticker)?.modelClass || ""),
               mappedTicker: m.ticker, mappedName: m.name,
               isSell: false, isKeep: false, isEquivalent: false, mapScore: 0, userOverride: false,
             })
