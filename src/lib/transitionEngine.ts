@@ -2,7 +2,7 @@ import type { AccountData, ImportHolding, ProcessedHolding, ImportMatch } from "
 
 export const TAX_RATE_LT = 0.238
 export const TAX_RATE_ST = 0.408
-export const TOLERANCE_BAND = 0.05  // ±5%
+export const TOLERANCE_BAND = 0.25  // 25% of target — e.g. 10% target → 7.5%-12.5% band  // ±5%
 
 export interface TradeRow {
   id: string
@@ -364,8 +364,9 @@ export function buildTransition(
 
   const totalSells = trades.filter(t => t.tradeType === "sell").reduce((s,t) => s + Math.abs(t.tradeAmount), 0)
   const totalBuys  = trades.filter(t => t.tradeType === "buy").reduce((s,t) => s + t.tradeAmount, 0)
-  const netCashFromTrades = totalSells - totalBuys
+  const netCashFromTrades = totalSells - totalBuys   // positive = net cash inflow
   const currentCash = accounts.reduce((s, a) => s + (a.cashValue || 0), 0)
+  const postCash = currentCash + netCashFromTrades
 
   return {
     clientName, modelName, date, totalValue,
@@ -417,15 +418,26 @@ function buildAssetAllocation(accounts: AccountData[], trades: TradeRow[], total
       .filter(t => !t.isEquivalent && t.assetClass === ac)
       .reduce((s, t) => s + t.tradeAmount, 0)
 
-    // Post trade = current + net trades (equivalents already counted in currentValue)
-    const postTradeValue = Math.max(0, currentValue + tradeAmount)
-    const targetValue = accounts.reduce((sum, acct) =>
-      sum + acct.inModel.filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === ac)
-        .reduce((s, h) => s + h.targetValue, 0), 0)
+    // Post trade = current + net trades
+    // For Cash: post = currentCash + sells - buys (cash goes up on sells, down on buys)
+    const netTradesForCash = ac === "Cash"
+      ? trades.filter(t => t.tradeType === "sell").reduce((s, t) => s + Math.abs(t.tradeAmount), 0)
+        - trades.filter(t => t.tradeType === "buy").reduce((s, t) => s + t.tradeAmount, 0)
+      : 0
+    const postTradeValue = ac === "Cash"
+      ? Math.max(0, currentValue + netTradesForCash)
+      : Math.max(0, currentValue + tradeAmount)
+    const targetValue = ac === "Cash"
+      ? accounts.reduce((sum, acct) => sum + (acct.cashTarget || 0), 0)
+      : accounts.reduce((sum, acct) =>
+          sum + acct.inModel.filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === ac)
+            .reduce((s, h) => s + h.targetValue, 0), 0)
 
     const targetPct = totalValue > 0 ? targetValue / totalValue : 0
     const postTradePct = totalValue > 0 ? postTradeValue / totalValue : 0
-    const inTolerance = Math.abs(postTradePct - targetPct) <= TOLERANCE_BAND
+    const inTolerance = targetPct > 0
+      ? Math.abs(postTradePct - targetPct) <= targetPct * TOLERANCE_BAND
+      : postTradePct === 0
 
     return {
       assetClass: ac, currentValue,
