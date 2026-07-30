@@ -305,45 +305,63 @@ export function buildTransition(
     }
   })
 
-  // ── Cap buys at class level — don't push class beyond target ────────────
-  // For each class, calculate effective current (raw holdings, no equiv) + any buys already added
-  // Cap total class buys so post-trade stays within TOLERANCE_BAND of target
+  // ── Cap total buys by available cash (currentCash + sellProceeds) ─────────
+  // Then cap each class by its own target gap
+  const totalSellProceeds = rawTrades
+    .filter(t => t.tradeType === "sell")
+    .reduce((s, t) => s + Math.abs(t.tradeAmount), 0)
+  const totalCurrentCash = accounts.reduce((s, a) => s + (a.cashValue || 0), 0)
+  const totalCashTarget = accounts.reduce((s, a) => s + (a.cashTarget || 0), 0)
+  // Available to invest = cash above target + sell proceeds
+  const cashAboveTarget = Math.max(0, totalCurrentCash - totalCashTarget)
+  let availableCash = cashAboveTarget + totalSellProceeds
 
-  // Group buyMap by asset class
+  // Group buyMap by asset class, sort classes by underweight (most underweight first)
   const buysByClass = new Map<string, TradeRow[]>()
   buyMap.forEach(t => {
     if (!buysByClass.has(t.assetClass)) buysByClass.set(t.assetClass, [])
     buysByClass.get(t.assetClass)!.push(t)
   })
 
-  buysByClass.forEach((classBuys, assetClass) => {
-    // Current raw value for this class (no equiv)
+  // Sort classes: most underweight first (largest gap gets funded first)
+  const sortedClasses = Array.from(buysByClass.entries()).sort(([acA], [acB]) => {
+    const gapA = buysByClass.get(acA)!.reduce((s, t) => s + t.tradeAmount, 0)
+    const gapB = buysByClass.get(acB)!.reduce((s, t) => s + t.tradeAmount, 0)
+    return gapB - gapA
+  })
+
+  sortedClasses.forEach(([assetClass, classBuys]) => {
+    if (availableCash <= 100) return
+
+    // Class-level cap: don't buy above class target
+    const classEquivValue = Array.from(globalEquivByTarget.entries())
+      .filter(([ticker]) => {
+        const m = accounts.flatMap(a => a.inModel).find(h => h.ticker === ticker)
+        return m && inferDisplayAssetClass(m.msCategory, m.productClass, m.modelClass) === assetClass
+      })
+      .reduce((s, [, v]) => s + v, 0)
     const classCurrentRaw = accounts.reduce((sum, acct) =>
       sum + [...acct.inModel, ...acct.unassigned]
         .filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === assetClass)
         .reduce((s, h) => s + h.currentValue, 0), 0)
-
-    // Target for this class
     const classTarget = accounts.reduce((sum, acct) =>
       sum + acct.inModel.filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === assetClass)
         .reduce((s, h) => s + h.targetValue, 0), 0)
-
-    // Sells within this class free up room
     const classSellAmt = trades.filter(t => t.tradeType === "sell" && t.assetClass === assetClass)
       .reduce((s, t) => s + Math.abs(t.tradeAmount), 0)
+    const classEffCurrent = classCurrentRaw + classEquivValue - classSellAmt
+    const maxClassBuy = Math.max(0, classTarget - classEffCurrent)
 
-    // Max we can add to this class = target - (current - sells)
-    const currentAfterSells = classCurrentRaw - classSellAmt
-    const maxClassBuy = Math.max(0, classTarget - currentAfterSells)
+    // Cap by both class target gap and available cash
+    let classRemaining = Math.min(maxClassBuy, availableCash)
 
-    // Cap total buys for this class
-    let remainingBuyRoom = maxClassBuy
     classBuys.forEach(t => {
-      if (remainingBuyRoom <= 100) return  // no room left
-      t.tradeAmount = Math.min(t.tradeAmount, remainingBuyRoom)
+      if (classRemaining <= 100) return
+      t.tradeAmount = Math.min(t.tradeAmount, classRemaining)
       if (t.tradeAmount > 100) {
         trades.push(t)
-        remainingBuyRoom -= t.tradeAmount
+        classRemaining -= t.tradeAmount
+        availableCash -= t.tradeAmount
       }
     })
   })
