@@ -254,36 +254,81 @@ export function buildTransition(
       }
     })
 
-    // In-model rebalancing — subtract equiv value already held from each target
+    // ── Class-level rebalancing ──────────────────────────────────────────────
+    // Group in-model holdings by asset class, compute class gap, generate trades.
+    // Buys go to rawTrades (consolidated later). Sells only when class is overweight
+    // beyond tolerance band. Never sell if we don't hold the security.
+
+    const classGroups = new Map<string, typeof account.inModel>()
     account.inModel.forEach(h => {
-      const equivSatisfied = globalEquivByTarget.get(h.ticker) || 0
-      const effectiveCurrent = h.currentValue + equivSatisfied
-      const gap = h.targetValue - effectiveCurrent
-      // Skip: if we don't actually hold this security and gap is negative (equiv makes it overweight)
-      // — the overweight is handled by the equivalents themselves, no trade needed
-      if (gap < 0 && h.currentValue === 0) return
-      // Skip small gaps
-      if (Math.abs(gap) <= 100) return
-      if (true) {
-        const assetClass = inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass)
-        const partialRatio = gap < 0 && h.currentValue > 0 ? Math.abs(gap) / h.currentValue : 0
-        const realizedGLLT = gap < 0 ? h.unrealizedGLLT * partialRatio : 0
-        const realizedGLST = gap < 0 ? h.unrealizedGLST * partialRatio : 0
-        const realizedGL = realizedGLLT + realizedGLST
-        const estimatedTax = realizedGL > 0
-          ? (realizedGLLT > 0 ? realizedGLLT * TAX_RATE_LT : 0) + (realizedGLST > 0 ? realizedGLST * TAX_RATE_ST : 0)
-          : 0
-        rawTrades.push({
-          id: `${accountId}-${h.ticker}-rebal`,
-          accountId, accountNumber,
-          ticker: h.ticker, securityName: h.name,
-          tradeType: gap > 0 ? "buy" : "sell", tradeAmount: gap,
-          currentValue: h.currentValue, targetValue: h.targetValue,
-          unrealizedGL: h.unrealizedGL, unrealizedGLST: h.unrealizedGLST, unrealizedGLLT: h.unrealizedGLLT,
-          isLongTerm: h.isLongTerm, realizedGL, realizedGLST, realizedGLLT, estimatedTax,
-          msCategory: h.msCategory, productClass: h.productClass, assetClass,
-          mappedTicker: h.ticker, mappedName: h.name,
-          isSell: gap < 0, isKeep: true, isEquivalent: false, mapScore: 10, userOverride: false,
+      const ac = inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass)
+      if (!classGroups.has(ac)) classGroups.set(ac, [])
+      classGroups.get(ac)!.push(h)
+    })
+
+    classGroups.forEach((classHoldings, assetClass) => {
+      const classRawCurrent = classHoldings.reduce((s, h) => s + h.currentValue, 0)
+      const classEquivValue = classHoldings.reduce((s, h) => s + (globalEquivByTarget.get(h.ticker) || 0), 0)
+      const classEffCurrent = classRawCurrent + classEquivValue
+      const classTarget = classHoldings.reduce((s, h) => s + h.targetValue, 0)
+
+      // Sells of unassigned already in rawTrades for this class
+      const existingSells = rawTrades.filter(t =>
+        t.tradeType === "sell" && t.assetClass === assetClass && t.accountId === accountId
+      ).reduce((s, t) => s + Math.abs(t.tradeAmount), 0)
+
+      const classAfterSells = classEffCurrent - existingSells
+      const classGap = classTarget - classAfterSells  // positive = underweight, negative = overweight
+      const totalValue = account.inModel.reduce((s, h) => s + h.currentValue, 0) +
+        account.unassigned.reduce((s, h) => s + h.currentValue, 0) + (account.cashValue || 0)
+
+      if (classGap > 100) {
+        // Underweight — distribute buy across securities proportional to their individual gap
+        const secGaps = classHoldings.map(h => {
+          const equivSat = globalEquivByTarget.get(h.ticker) || 0
+          return { h, gap: Math.max(0, h.targetValue - h.currentValue - equivSat) }
+        })
+        const totalSecGap = secGaps.reduce((s, x) => s + x.gap, 0)
+        if (totalSecGap <= 0) return
+        secGaps.forEach(({ h, gap }) => {
+          if (gap <= 0) return
+          const buyAmt = Math.min(gap, (gap / totalSecGap) * classGap)
+          if (buyAmt < 100) return
+          rawTrades.push({
+            id: `${accountId}-${h.ticker}-rebal`,
+            accountId, accountNumber,
+            ticker: h.ticker, securityName: h.name, tradeType: "buy", tradeAmount: buyAmt,
+            currentValue: h.currentValue, targetValue: h.targetValue,
+            unrealizedGL: h.unrealizedGL, unrealizedGLST: h.unrealizedGLST, unrealizedGLLT: h.unrealizedGLLT,
+            isLongTerm: h.isLongTerm, realizedGL: 0, realizedGLST: 0, realizedGLLT: 0, estimatedTax: 0,
+            msCategory: h.msCategory, productClass: h.productClass, assetClass,
+            mappedTicker: h.ticker, mappedName: h.name,
+            isSell: false, isKeep: true, isEquivalent: false, mapScore: 10, userOverride: false,
+          })
+        })
+      } else if (classGap < -100 && classRawCurrent > 0) {
+        // Overweight — sell proportionally from securities we actually hold
+        const overweight = Math.abs(classGap)
+        classHoldings.filter(h => h.currentValue > 0).forEach(h => {
+          const sellAmt = Math.min(h.currentValue, overweight * (h.currentValue / classRawCurrent))
+          if (sellAmt < 100) return
+          const pr = sellAmt / h.currentValue
+          const realizedGLLT = (h.unrealizedGLLT || 0) * pr
+          const realizedGLST = (h.unrealizedGLST || 0) * pr
+          const realizedGL = realizedGLLT + realizedGLST
+          const estimatedTax = realizedGL > 0
+            ? (realizedGLLT > 0 ? realizedGLLT * TAX_RATE_LT : 0) + (realizedGLST > 0 ? realizedGLST * TAX_RATE_ST : 0) : 0
+          rawTrades.push({
+            id: `${accountId}-${h.ticker}-rebal`,
+            accountId, accountNumber,
+            ticker: h.ticker, securityName: h.name, tradeType: "sell", tradeAmount: -sellAmt,
+            currentValue: h.currentValue, targetValue: h.targetValue,
+            unrealizedGL: h.unrealizedGL, unrealizedGLST: h.unrealizedGLST, unrealizedGLLT: h.unrealizedGLLT,
+            isLongTerm: h.isLongTerm, realizedGL, realizedGLST, realizedGLLT, estimatedTax,
+            msCategory: h.msCategory, productClass: h.productClass, assetClass,
+            mappedTicker: h.ticker, mappedName: h.name,
+            isSell: true, isKeep: true, isEquivalent: false, mapScore: 10, userOverride: false,
+          })
         })
       }
     })
