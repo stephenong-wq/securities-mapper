@@ -1039,7 +1039,32 @@ export default function Home() {
                     <span style={{ textAlign: "right" }}>Post %</span>
                   </div>
 
-                  {(transition.assetGroups || []).map(group => {
+                  {/* Cash row — current cash + net from all trades */}
+                  {(() => {
+                    const postCash = (transition.currentCash || 0) + (transition.netCashFromTrades || 0)
+                    const cashPct = transition.totalValue > 0 ? (transition.currentCash || 0) / transition.totalValue : 0
+                    const postCashPct = transition.totalValue > 0 ? postCash / transition.totalValue : 0
+                    return (transition.currentCash || 0) > 0 || (transition.netCashFromTrades || 0) !== 0 ? (
+                      <div style={{ background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", order: 999 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 80px 90px 90px 90px 60px 60px 60px", padding: "12px 14px", gap: 8, alignItems: "center" }}>
+                          <span style={{ fontSize: 14, color: "#00f0c0" }}>✓</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>Cash</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: (transition.netCashFromTrades || 0) >= 0 ? "#00f0c0" : "#ff4488" }}>
+                            {(transition.netCashFromTrades || 0) !== 0 ? `${(transition.netCashFromTrades || 0) > 0 ? "+" : ""}${fmt$(transition.netCashFromTrades || 0)}` : "—"}
+                          </span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-muted)" }}>{fmt$(transition.currentCash || 0)}</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-muted)" }}>—</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-muted)" }}>{fmt$(postCash)}</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>{(cashPct * 100).toFixed(1)}%</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>—</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>{(postCashPct * 100).toFixed(1)}%</span>
+                        </div>
+                      </div>
+                    ) : null
+                  })()}
+
+                  {(transition.assetGroups || []).filter(g => g.assetClass !== "Cash").map(group => {
                     const isExpanded = expandedAssetClasses.has(group.assetClass)
                     const tradeDiff = group.tradeAmount
                     const diffFromTarget = group.postTradeValue - group.targetValue
@@ -1064,14 +1089,19 @@ export default function Home() {
                             <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>{isExpanded ? "▼" : "▶"}</span>
                           </div>
 
-                          {/* Trade $ */}
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: tradeDiff > 0 ? "#00f0c0" : tradeDiff < 0 ? "#ff4488" : "var(--ink-faint)" }}>
-                            {tradeDiff !== 0 ? `${tradeDiff > 0 ? "+" : ""}${fmt$(tradeDiff)}` : "—"}
-                          </span>
-
-                          {/* G/L $ — sum from editedTrades for this class */}
+                          {/* Trade $ — sum from editedTrades for dynamic updates */}
                           {(() => {
-                            const classGL = editedTrades.filter(t => t.assetClass === group.assetClass && t.isSell).reduce((s,t) => s + t.realizedGL, 0)
+                            const liveTradeAmt = editedTrades
+                              .filter(t => t.assetClass === group.assetClass && !t.isEquivalent)
+                              .reduce((s, t) => s + (t.editTradeAmount ?? t.tradeAmount), 0)
+                            return <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: liveTradeAmt > 0 ? "#00f0c0" : liveTradeAmt < 0 ? "#ff4488" : "var(--ink-faint)" }}>
+                              {liveTradeAmt !== 0 ? `${liveTradeAmt > 0 ? "+" : ""}${fmt$(liveTradeAmt)}` : "—"}
+                            </span>
+                          })()}
+
+                          {/* G/L $ — live from editedTrades */}
+                          {(() => {
+                            const classGL = editedTrades.filter(t => t.assetClass === group.assetClass && (t.isSell || (t.isEquivalent && (t.editTradeAmount ?? 0) < 0))).reduce((s,t) => s + t.realizedGL, 0)
                             return <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: classGL < 0 ? "#ff4488" : classGL > 0 ? "#00f0c0" : "var(--ink-faint)" }}>
                               {classGL !== 0 ? fmt$(classGL) : "—"}
                             </span>
@@ -1083,8 +1113,14 @@ export default function Home() {
                           {/* Target $ */}
                           <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-muted)" }}>{fmt$(group.targetValue)}</span>
 
-                          {/* Post $ */}
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: group.inTolerance ? "#00f0c0" : "#ff4488" }}>{fmt$(group.postTradeValue)}</span>
+                          {/* Post $ — live from editedTrades */}
+                          {(() => {
+                            const liveTrade = editedTrades.filter(t => t.assetClass === group.assetClass && !t.isEquivalent).reduce((s, t) => s + (t.editTradeAmount ?? t.tradeAmount), 0)
+                            const livePost = group.currentValue + liveTrade
+                            const livePostPct = group.totalValue > 0 ? livePost / group.totalValue : 0
+                            const liveTol = Math.abs(livePostPct - group.targetPct) <= 0.05
+                            return <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: liveTol ? "#00f0c0" : "#ff4488" }}>{fmt$(livePost)}</span>
+                          })()}
 
                           {/* Current % */}
                           <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{(group.currentPct * 100).toFixed(1)}%</span>
@@ -1092,10 +1128,16 @@ export default function Home() {
                           {/* Target % */}
                           <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{(group.targetPct * 100).toFixed(1)}%</span>
 
-                          {/* Post % */}
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: group.inTolerance ? "#00f0c0" : "#ff4488" }}>
-                            {(group.postTradePct * 100).toFixed(1)}%
-                          </span>
+                          {/* Post % — live */}
+                          {(() => {
+                            const liveTrade2 = editedTrades.filter(t => t.assetClass === group.assetClass && !t.isEquivalent).reduce((s, t) => s + (t.editTradeAmount ?? t.tradeAmount), 0)
+                            const livePost2 = group.currentValue + liveTrade2
+                            const livePostPct2 = group.totalValue > 0 ? livePost2 / group.totalValue : 0
+                            const liveTol2 = Math.abs(livePostPct2 - group.targetPct) <= 0.05
+                            return <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: liveTol2 ? "#00f0c0" : "#ff4488" }}>
+                              {(livePostPct2 * 100).toFixed(1)}%
+                            </span>
+                          })()}
                         </div>
 
                         {/* Expanded holdings — grouped by security with equivalents nested */}
@@ -1175,7 +1217,17 @@ export default function Home() {
                                             value={equivTradeAmt === 0 ? "" : equivTradeAmt.toFixed(0)}
                                             placeholder="0"
                                             onChange={e => {
-                                              const val = parseFloat(e.target.value) || 0
+                                              const raw = e.target.value
+                                              if (raw === "-" || raw === "") {
+                                                // Allow partial input - just store as string temporarily via display
+                                                setEditedTrades(prev => {
+                                                  const existing = prev.find(t => t.id === equivTradeId)
+                                                  if (existing) return prev.map(t => t.id === equivTradeId ? { ...t, editTradeAmount: 0, tradeType: "sell" as const } : t)
+                                                  return prev
+                                                })
+                                                return
+                                              }
+                                              const val = parseFloat(raw) || 0
                                               // Add/update an override trade row for this equiv
                                               setEditedTrades(prev => {
                                                 const existing = prev.find(t => t.id === equivTradeId)
