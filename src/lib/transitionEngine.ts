@@ -247,36 +247,110 @@ export function buildTransition(
       }
     })
 
-    // In-model rebalancing — subtract equiv value already held from each target
+    // ── Class-level rebalancing (Level 2) ────────────────────────────────────
+    // Class gap drives total trade amount. Security-level trades aim for security targets.
+    // Mapped equivalents (Do Not Buy) count toward gap but never generate buy orders.
+
+    const classGroups = new Map<string, typeof account.inModel>()
     account.inModel.forEach(h => {
-      const equivSatisfied = globalEquivByTarget.get(h.ticker) || 0
-      const effectiveCurrent = h.currentValue + equivSatisfied
-      const gap = h.targetValue - effectiveCurrent
-      // Skip: if we don't actually hold this security and gap is negative (equiv makes it overweight)
-      // — the overweight is handled by the equivalents themselves, no trade needed
-      if (gap < 0 && h.currentValue === 0) return
-      // Skip small gaps
-      if (Math.abs(gap) <= 100) return
-      if (true) {
-        const assetClass = inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass)
-        const partialRatio = gap < 0 && h.currentValue > 0 ? Math.abs(gap) / h.currentValue : 0
-        const realizedGLLT = gap < 0 ? h.unrealizedGLLT * partialRatio : 0
-        const realizedGLST = gap < 0 ? h.unrealizedGLST * partialRatio : 0
-        const realizedGL = realizedGLLT + realizedGLST
-        const estimatedTax = realizedGL > 0
-          ? (realizedGLLT > 0 ? realizedGLLT * TAX_RATE_LT : 0) + (realizedGLST > 0 ? realizedGLST * TAX_RATE_ST : 0)
-          : 0
-        rawTrades.push({
-          id: `${accountId}-${h.ticker}-rebal`,
-          accountId, accountNumber,
-          ticker: h.ticker, securityName: h.name,
-          tradeType: gap > 0 ? "buy" : "sell", tradeAmount: gap,
-          currentValue: h.currentValue, targetValue: h.targetValue,
-          unrealizedGL: h.unrealizedGL, unrealizedGLST: h.unrealizedGLST, unrealizedGLLT: h.unrealizedGLLT,
-          isLongTerm: h.isLongTerm, realizedGL, realizedGLST, realizedGLLT, estimatedTax,
-          msCategory: h.msCategory, productClass: h.productClass, assetClass,
-          mappedTicker: h.ticker, mappedName: h.name,
-          isSell: gap < 0, isKeep: true, isEquivalent: false, mapScore: 10, userOverride: false,
+      const ac = inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass)
+      if (!classGroups.has(ac)) classGroups.set(ac, [])
+      classGroups.get(ac)!.push(h)
+    })
+
+    classGroups.forEach((classHoldings, assetClass) => {
+      const classRawCurrent = classHoldings.reduce((s, h) => s + h.currentValue, 0)
+      const classEquivValue = classHoldings.reduce((s, h) => s + (globalEquivByTarget.get(h.ticker) || 0), 0)
+      const classEffCurrent = classRawCurrent + classEquivValue
+      const classTarget = classHoldings.reduce((s, h) => s + h.targetValue, 0)
+      const classSellsAmt = rawTrades.filter(t =>
+        t.tradeType === "sell" && t.assetClass === assetClass && t.accountId === accountId
+      ).reduce((s, t) => s + Math.abs(t.tradeAmount), 0)
+      const classAfterSells = classEffCurrent - classSellsAmt
+      const classGap = classTarget - classAfterSells
+
+      if (classGap > 100) {
+        // Underweight — buy model securities proportional to their individual gap
+        const secGaps = classHoldings.map(h => {
+          const equivSat = globalEquivByTarget.get(h.ticker) || 0
+          return { h, gap: Math.max(0, h.targetValue - h.currentValue - equivSat) }
+        })
+        const totalSecGap = secGaps.reduce((s, x) => s + x.gap, 0)
+        if (totalSecGap <= 0) return
+        secGaps.forEach(({ h, gap }) => {
+          if (gap <= 0) return
+          const buyAmt = Math.min(gap, (gap / totalSecGap) * classGap)
+          if (buyAmt < 100) return
+          rawTrades.push({
+            id: `${accountId}-${h.ticker}-rebal`, accountId, accountNumber,
+            ticker: h.ticker, securityName: h.name, tradeType: "buy", tradeAmount: buyAmt,
+            currentValue: h.currentValue, targetValue: h.targetValue,
+            unrealizedGL: h.unrealizedGL, unrealizedGLST: h.unrealizedGLST, unrealizedGLLT: h.unrealizedGLLT,
+            isLongTerm: h.isLongTerm, realizedGL: 0, realizedGLST: 0, realizedGLLT: 0, estimatedTax: 0,
+            msCategory: h.msCategory, productClass: h.productClass, assetClass,
+            mappedTicker: h.ticker, mappedName: h.name,
+            isSell: false, isKeep: true, isEquivalent: false, mapScore: 10, userOverride: false,
+          })
+        })
+      } else if (classGap < -100 && classRawCurrent > 0) {
+        // Overweight — sell proportionally from held securities only
+        const overweight = Math.abs(classGap)
+        classHoldings.filter(h => h.currentValue > 0).forEach(h => {
+          const sellAmt = Math.min(h.currentValue, overweight * (h.currentValue / classRawCurrent))
+          if (sellAmt < 100) return
+          const pr = sellAmt / h.currentValue
+          const realizedGLLT = h.unrealizedGLLT * pr
+          const realizedGLST = h.unrealizedGLST * pr
+          const realizedGL = realizedGLLT + realizedGLST
+          const estimatedTax = realizedGL > 0
+            ? (realizedGLLT > 0 ? realizedGLLT * TAX_RATE_LT : 0) + (realizedGLST > 0 ? realizedGLST * TAX_RATE_ST : 0) : 0
+          rawTrades.push({
+            id: `${accountId}-${h.ticker}-rebal`, accountId, accountNumber,
+            ticker: h.ticker, securityName: h.name, tradeType: "sell", tradeAmount: -sellAmt,
+            currentValue: h.currentValue, targetValue: h.targetValue,
+            unrealizedGL: h.unrealizedGL, unrealizedGLST: h.unrealizedGLST, unrealizedGLLT: h.unrealizedGLLT,
+            isLongTerm: h.isLongTerm, realizedGL, realizedGLST, realizedGLLT, estimatedTax,
+            msCategory: h.msCategory, productClass: h.productClass, assetClass,
+            mappedTicker: h.ticker, mappedName: h.name,
+            isSell: true, isKeep: true, isEquivalent: false, mapScore: 10, userOverride: false,
+          })
+        })
+      } else {
+        // Within tolerance at class level — try to reach security-level targets
+        classHoldings.forEach(h => {
+          const equivSat = globalEquivByTarget.get(h.ticker) || 0
+          const secGap = h.targetValue - h.currentValue - equivSat
+          if (Math.abs(secGap) <= 100) return
+          if (secGap > 0) {
+            rawTrades.push({
+              id: `${accountId}-${h.ticker}-rebal`, accountId, accountNumber,
+              ticker: h.ticker, securityName: h.name, tradeType: "buy", tradeAmount: secGap,
+              currentValue: h.currentValue, targetValue: h.targetValue,
+              unrealizedGL: h.unrealizedGL, unrealizedGLST: h.unrealizedGLST, unrealizedGLLT: h.unrealizedGLLT,
+              isLongTerm: h.isLongTerm, realizedGL: 0, realizedGLST: 0, realizedGLLT: 0, estimatedTax: 0,
+              msCategory: h.msCategory, productClass: h.productClass, assetClass,
+              mappedTicker: h.ticker, mappedName: h.name,
+              isSell: false, isKeep: true, isEquivalent: false, mapScore: 10, userOverride: false,
+            })
+          } else if (h.currentValue > 0) {
+            const sellAmt = Math.min(h.currentValue, Math.abs(secGap))
+            const pr = sellAmt / h.currentValue
+            const realizedGLLT = h.unrealizedGLLT * pr
+            const realizedGLST = h.unrealizedGLST * pr
+            const realizedGL = realizedGLLT + realizedGLST
+            const estimatedTax = realizedGL > 0
+              ? (realizedGLLT > 0 ? realizedGLLT * TAX_RATE_LT : 0) + (realizedGLST > 0 ? realizedGLST * TAX_RATE_ST : 0) : 0
+            rawTrades.push({
+              id: `${accountId}-${h.ticker}-rebal`, accountId, accountNumber,
+              ticker: h.ticker, securityName: h.name, tradeType: "sell", tradeAmount: -sellAmt,
+              currentValue: h.currentValue, targetValue: h.targetValue,
+              unrealizedGL: h.unrealizedGL, unrealizedGLST: h.unrealizedGLST, unrealizedGLLT: h.unrealizedGLLT,
+              isLongTerm: h.isLongTerm, realizedGL, realizedGLST, realizedGLLT, estimatedTax,
+              msCategory: h.msCategory, productClass: h.productClass, assetClass,
+              mappedTicker: h.ticker, mappedName: h.name,
+              isSell: true, isKeep: true, isEquivalent: false, mapScore: 10, userOverride: false,
+            })
+          }
         })
       }
     })
@@ -298,48 +372,8 @@ export function buildTransition(
     }
   })
 
-  // ── Cap buys at class level — don't push class beyond target ────────────
-  // For each class, calculate effective current (raw holdings, no equiv) + any buys already added
-  // Cap total class buys so post-trade stays within TOLERANCE_BAND of target
-
-  // Group buyMap by asset class
-  const buysByClass = new Map<string, TradeRow[]>()
-  buyMap.forEach(t => {
-    if (!buysByClass.has(t.assetClass)) buysByClass.set(t.assetClass, [])
-    buysByClass.get(t.assetClass)!.push(t)
-  })
-
-  buysByClass.forEach((classBuys, assetClass) => {
-    // Current raw value for this class (no equiv)
-    const classCurrentRaw = accounts.reduce((sum, acct) =>
-      sum + [...acct.inModel, ...acct.unassigned]
-        .filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === assetClass)
-        .reduce((s, h) => s + h.currentValue, 0), 0)
-
-    // Target for this class
-    const classTarget = accounts.reduce((sum, acct) =>
-      sum + acct.inModel.filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === assetClass)
-        .reduce((s, h) => s + h.targetValue, 0), 0)
-
-    // Sells within this class free up room
-    const classSellAmt = trades.filter(t => t.tradeType === "sell" && t.assetClass === assetClass)
-      .reduce((s, t) => s + Math.abs(t.tradeAmount), 0)
-
-    // Max we can add to this class = target - (current - sells)
-    const currentAfterSells = classCurrentRaw - classSellAmt
-    const maxClassBuy = Math.max(0, classTarget - currentAfterSells)
-
-    // Cap total buys for this class
-    let remainingBuyRoom = maxClassBuy
-    classBuys.forEach(t => {
-      if (remainingBuyRoom <= 100) return  // no room left
-      t.tradeAmount = Math.min(t.tradeAmount, remainingBuyRoom)
-      if (t.tradeAmount > 100) {
-        trades.push(t)
-        remainingBuyRoom -= t.tradeAmount
-      }
-    })
-  })
+  // Add all consolidated buys to trades
+  buyMap.forEach(t => { if (t.tradeAmount > 100) trades.push(t) })
 
   const sells = trades.filter(t => t.tradeType === "sell")
   const totalTradeGL = sells.reduce((s, t) => s + t.realizedGL, 0)
