@@ -186,11 +186,6 @@ export function buildTransition(
 
       if (isMap) {
         // Mapped equivalent — no actual trade, just track as equivalent
-        // Use the TARGET's asset class (from its modelClass) not the unassigned holding's category
-        const targetModelClass = account.inModel.find(m => m.ticker === p.matches[0]?.ticker)?.modelClass || ""
-        const equivAssetClass = targetModelClass
-          ? inferDisplayAssetClass(p.matches[0]?.msCategory || h.msCategory, h.productClass, targetModelClass)
-          : assetClass
         rawTrades.push({
           id: `${accountId}-${h.ticker}-equiv`,
           accountId, accountNumber,
@@ -200,7 +195,7 @@ export function buildTransition(
           unrealizedGL: h.unrealizedGL, unrealizedGLST: h.unrealizedGLST, unrealizedGLLT: h.unrealizedGLLT,
           isLongTerm: h.isLongTerm,
           realizedGL: 0, realizedGLST: 0, realizedGLLT: 0, estimatedTax: 0,
-          msCategory: h.msCategory, productClass: h.productClass, assetClass: equivAssetClass,
+          msCategory: h.msCategory, productClass: h.productClass, assetClass,
           mappedTicker: p.matches[0]?.ticker || "", mappedName: p.matches[0]?.name || "",
           isSell: false, isKeep: false, isEquivalent: true, mapScore: p.mapScore, userOverride: false,
         })
@@ -378,10 +373,24 @@ export function buildTransition(
 }
 
 function buildAssetAllocation(accounts: AccountData[], trades: TradeRow[], totalValue: number): AssetAllocationRow[] {
+  // Build map: unassigned ticker → asset class from its equiv trade (uses target's modelClass)
+  const equivAssetClassMap = new Map<string, string>()
+  trades.filter(t => t.isEquivalent).forEach(t => {
+    equivAssetClassMap.set(t.ticker, t.assetClass)
+  })
+
+  const getHoldingAssetClass = (h: { ticker: string; msCategory: string; productClass: string; modelClass: string; secSet: string }) => {
+    // For unassigned holdings mapped as equivalents, use the target's asset class
+    if (h.secSet === "Unassigned" && equivAssetClassMap.has(h.ticker)) {
+      return equivAssetClassMap.get(h.ticker)!
+    }
+    return inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass)
+  }
+
   const classSet = new Set<string>()
   accounts.forEach(acct => {
     ;[...acct.inModel, ...acct.unassigned].forEach(h => {
-      classSet.add(inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass))
+      classSet.add(getHoldingAssetClass(h))
     })
   })
 
@@ -393,7 +402,7 @@ function buildAssetAllocation(accounts: AccountData[], trades: TradeRow[], total
       ? accounts.reduce((sum, acct) => sum + (acct.cashValue || 0), 0)
       : accounts.reduce((sum, acct) =>
           sum + [...acct.inModel, ...acct.unassigned]
-            .filter(h => inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass) === ac)
+            .filter(h => getHoldingAssetClass(h) === ac)
             .reduce((s, h) => s + h.currentValue, 0), 0)
 
     // tradeAmount = net of buys and sells (equivalents have tradeAmount=0, so excluded)
@@ -436,6 +445,17 @@ function buildAssetAllocation(accounts: AccountData[], trades: TradeRow[], total
 
 function buildAssetGroups(accounts: AccountData[], trades: TradeRow[], totalValue: number): AssetClassGroup[] {
   const alloc = buildAssetAllocation(accounts, trades, totalValue)
+
+  // Build equiv asset class map (same as in buildAssetAllocation)
+  const equivAssetClassMap = new Map<string, string>()
+  trades.filter(t => t.isEquivalent).forEach(t => {
+    equivAssetClassMap.set(t.ticker, t.assetClass)
+  })
+
+  const getHoldingAssetClass = (h: { ticker: string; msCategory: string; productClass: string; modelClass: string; secSet: string }) => {
+    if (h.secSet === "Unassigned" && equivAssetClassMap.has(h.ticker)) return equivAssetClassMap.get(h.ticker)!
+    return inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass)
+  }
 
   // Build equiv map: target ticker -> list of equiv holdings
   const equivsByTarget = new Map<string, EquivRow[]>()
