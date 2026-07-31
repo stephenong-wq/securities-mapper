@@ -2,7 +2,8 @@ import type { AccountData, ImportHolding, ProcessedHolding, ImportMatch } from "
 
 export const TAX_RATE_LT = 0.238
 export const TAX_RATE_ST = 0.408
-export const TOLERANCE_BAND = 0.25  // 25% of target — e.g. 10% target → 7.5%-12.5% band  // ±5%
+export const TOLERANCE_BAND = 0.25          // 25% of target — e.g. 10% target → 7.5%-12.5% band
+export const EQUITY_IN_RETIREMENT = 0.70    // target 70% of equity allocation in retirement accounts  // ±5%
 
 export interface TradeRow {
   id: string
@@ -105,6 +106,16 @@ export interface AssetAllocationRow {
   inTolerance: boolean
 }
 
+// ─── Asset class helpers ─────────────────────────────────────────────────────
+function isEquityClass(assetClass: string): boolean {
+  return /equity|markets|large cap|small cap/i.test(assetClass) &&
+    !/fixed income|bond|alternative|commodity/i.test(assetClass)
+}
+
+function isFixedIncomeClass(assetClass: string): boolean {
+  return /fixed income|bond|investment grade|high yield/i.test(assetClass)
+}
+
 // ─── Asset class from Model Class ─────────────────────────────────────────────
 export function inferDisplayAssetClass(msCategory: string, productClass: string, modelClass: string): string {
   if (modelClass && modelClass !== "Unassigned" && modelClass !== "Cash" && modelClass !== "N/A") {
@@ -160,6 +171,37 @@ export function buildTransition(
     sum + [...acct.inModel, ...acct.unassigned].reduce((s, h) => s + h.currentValue, 0), 0)
 
   const rawTrades: TradeRow[] = []
+
+  // ── Asset Location Pre-pass ──────────────────────────────────────────────
+  const retirementAccounts = accounts.filter(a => a.isRetirement)
+  const taxableAccounts = accounts.filter(a => !a.isRetirement)
+  const hasMultipleAccountTypes = retirementAccounts.length > 0 && taxableAccounts.length > 0
+
+  const acctValue = (a: AccountData) =>
+    [...a.inModel, ...a.unassigned].reduce((s, h) => s + h.currentValue, 0) + (a.cashValue || 0)
+
+  const totalRetirementValue = retirementAccounts.reduce((s, a) => s + acctValue(a), 0)
+  const totalTaxableValue = taxableAccounts.reduce((s, a) => s + acctValue(a), 0)
+
+  // Total equity target across all in-model holdings
+  const totalEquityTarget = accounts.reduce((s, a) =>
+    s + a.inModel.filter(h => isEquityClass(inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass)))
+      .reduce((ss, h) => ss + h.targetValue, 0), 0)
+
+  // 70% of equity goes to retirement, capped at 95% of retirement capacity
+  const equityToRetirement = hasMultipleAccountTypes
+    ? Math.min(totalEquityTarget * EQUITY_IN_RETIREMENT, totalRetirementValue * 0.95)
+    : totalEquityTarget
+  const equityToTaxable = totalEquityTarget - equityToRetirement
+
+  // Per-account equity budget
+  const accountEquityBudget = new Map<string, number>()
+  retirementAccounts.forEach(a => {
+    accountEquityBudget.set(a.accountId, totalRetirementValue > 0 ? (acctValue(a) / totalRetirementValue) * equityToRetirement : 0)
+  })
+  taxableAccounts.forEach(a => {
+    accountEquityBudget.set(a.accountId, totalTaxableValue > 0 ? (acctValue(a) / totalTaxableValue) * equityToTaxable : 0)
+  })
 
   // Pre-build equivValueByTarget across ALL accounts
   // Maps target ticker -> total equivalent value satisfying it (split by weight for multi-match)
@@ -283,7 +325,19 @@ export function buildTransition(
       const classGap = classTarget - classEffCurrent  // positive = underweight, negative = overweight
 
       if (classGap > 100) {
-        // Underweight — distribute buy across securities proportional to their individual gap
+        // Asset location: cap equity buys per account based on asset location budget
+        const isEquity = isEquityClass(assetClass)
+        const acctEquityBudget = accountEquityBudget.get(accountId) || 0
+        const acctEquityUsed = rawTrades
+          .filter(t => t.tradeType === "buy" && t.accountId === accountId && isEquityClass(t.assetClass))
+          .reduce((s, t) => s + t.tradeAmount, 0)
+        const equityBudgetRemaining = isEquity
+          ? Math.max(0, acctEquityBudget - acctEquityUsed)
+          : Infinity
+        const effectiveClassGap = isEquity ? Math.min(classGap, equityBudgetRemaining) : classGap
+        if (effectiveClassGap < 100) return
+
+        // Underweight — distribute buy across securities proportional to their gap
         const secGaps = classHoldings.map(h => {
           const equivSat = globalEquivByTarget.get(h.ticker) || 0
           return { h, gap: Math.max(0, h.targetValue - h.currentValue - equivSat) }
@@ -292,9 +346,8 @@ export function buildTransition(
         if (totalSecGap <= 0) return
         secGaps.forEach(({ h, gap }) => {
           if (gap <= 0) return
-          // Never buy above individual security gap (target - effectiveCurrent)
-          const classShare = (gap / totalSecGap) * classGap
-          const buyAmt = Math.min(gap, classShare)  // capped at individual security gap
+          const classShare = (gap / totalSecGap) * effectiveClassGap
+          const buyAmt = Math.min(gap, classShare)
           if (buyAmt < 100) return
           rawTrades.push({
             id: `${accountId}-${h.ticker}-rebal`,
