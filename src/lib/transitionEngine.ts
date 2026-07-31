@@ -162,12 +162,13 @@ export function buildTransition(
   const rawTrades: TradeRow[] = []
 
   // Pre-build equivValueByTarget across ALL accounts
-  // Maps target ticker -> total equivalent value already held (no sell needed)
+  // Maps target ticker -> total equivalent value satisfying it (split by weight for multi-match)
   const globalEquivByTarget = new Map<string, number>()
   processedAccounts.forEach(({ processed }) => {
     processed.filter(p => p.action === "map").forEach(p => {
+      if (p.matches.length === 0) return
       p.matches.forEach(m => {
-        const w = m.weight ?? 1
+        const w = m.weight ?? (1 / p.matches.length)
         globalEquivByTarget.set(m.ticker, (globalEquivByTarget.get(m.ticker) || 0) + p.holding.currentValue * w)
       })
     })
@@ -185,26 +186,32 @@ export function buildTransition(
       const assetClass = inferDisplayAssetClass(h.msCategory, h.productClass, h.modelClass)
 
       if (isMap) {
-        // Mapped equivalent — no actual trade, just track as equivalent
-        rawTrades.push({
-          id: `${accountId}-${h.ticker}-equiv`,
-          accountId, accountNumber,
-          ticker: h.ticker, securityName: h.name,
-          tradeType: "equivalent", tradeAmount: 0,
-          currentValue: h.currentValue, targetValue: 0,
-          unrealizedGL: h.unrealizedGL, unrealizedGLST: h.unrealizedGLST, unrealizedGLLT: h.unrealizedGLLT,
-          isLongTerm: h.isLongTerm,
-          realizedGL: 0, realizedGLST: 0, realizedGLLT: 0, estimatedTax: 0,
-          msCategory: h.msCategory, productClass: h.productClass,
-          assetClass: p.matches[0]
-            ? inferDisplayAssetClass(
-                p.matches[0].msCategory,
-                account.inModel.find(m => m.ticker === p.matches[0]!.ticker)?.productClass || "",
-                account.inModel.find(m => m.ticker === p.matches[0]!.ticker)?.modelClass || ""
-              )
-            : assetClass,
-          mappedTicker: p.matches[0]?.ticker || "", mappedName: p.matches[0]?.name || "",
-          isSell: false, isKeep: false, isEquivalent: true, mapScore: p.mapScore, userOverride: false,
+        // Mapped equivalent — push one equiv trade per matched target
+        // For multi-target mappings (e.g. "SPEM / XCEM"), split value by weight
+        const matchList = p.matches.length > 0 ? p.matches : [{ ticker: "", name: "", msCategory: h.msCategory, weight: undefined as number | undefined, targetValue: 0, currentValue: 0, underweightValue: 0, score: 0 }]
+        matchList.forEach((m, mi) => {
+          const targetInModel = m.ticker ? account.inModel.find(im => im.ticker === m.ticker) : null
+          const equivAssetClass = targetInModel
+            ? inferDisplayAssetClass(m.msCategory, targetInModel.productClass, targetInModel.modelClass)
+            : assetClass
+          const weight = m.weight ?? (1 / matchList.length)
+          const equivValue = h.currentValue * weight
+          rawTrades.push({
+            id: `${accountId}-${h.ticker}-equiv-${mi}`,
+            accountId, accountNumber,
+            ticker: h.ticker, securityName: h.name,
+            tradeType: "equivalent", tradeAmount: 0,
+            currentValue: equivValue, targetValue: 0,
+            unrealizedGL: h.unrealizedGL * weight,
+            unrealizedGLST: h.unrealizedGLST * weight,
+            unrealizedGLLT: h.unrealizedGLLT * weight,
+            isLongTerm: h.isLongTerm,
+            realizedGL: 0, realizedGLST: 0, realizedGLLT: 0, estimatedTax: 0,
+            msCategory: h.msCategory, productClass: h.productClass,
+            assetClass: equivAssetClass,
+            mappedTicker: m.ticker || "", mappedName: m.name || "",
+            isSell: false, isKeep: false, isEquivalent: true, mapScore: p.mapScore, userOverride: false,
+          })
         })
       } else {
         // Actual sell (loss or gain within budget)
@@ -285,7 +292,9 @@ export function buildTransition(
         if (totalSecGap <= 0) return
         secGaps.forEach(({ h, gap }) => {
           if (gap <= 0) return
-          const buyAmt = Math.min(gap, (gap / totalSecGap) * classGap)
+          // Never buy above individual security gap (target - effectiveCurrent)
+          const classShare = (gap / totalSecGap) * classGap
+          const buyAmt = Math.min(gap, classShare)  // capped at individual security gap
           if (buyAmt < 100) return
           rawTrades.push({
             id: `${accountId}-${h.ticker}-rebal`,
