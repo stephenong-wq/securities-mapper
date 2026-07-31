@@ -1034,6 +1034,25 @@ export default function Home() {
               {transition && (
                 <div className="fade-up-2" style={{ padding: "16px 18px", background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 12 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent)", fontFamily: "var(--font-mono)", marginBottom: 14 }}>Tax Summary</div>
+                  {/* Account type badges */}
+                  {transition.accounts.length > 0 && (
+                    <div style={{ marginBottom: 12, display: "flex", flexDirection: "column", gap: 4 }}>
+                      {transition.accounts.map(a => {
+                        const isRet = /ira|401k|roth|403b|sep|simple|pension/i.test(a.regType || "")
+                        return (
+                          <div key={a.accountId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11 }}>
+                            <span style={{ fontFamily: "var(--font-mono)", color: "var(--ink-muted)" }}>{"x" + a.accountNumber.replace(/\D/g,"").slice(-4)}</span>
+                            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                              <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 20, background: isRet ? "rgba(68,136,255,0.12)" : "rgba(0,200,255,0.08)", color: isRet ? "#4488ff" : "var(--accent)", border: `1px solid ${isRet ? "#4488ff33" : "rgba(0,200,255,0.2)"}`, fontWeight: 600 }}>
+                                {isRet ? "Retirement" : "Taxable"}
+                              </span>
+                              <span style={{ fontFamily: "var(--font-mono)", color: "var(--ink-faint)", fontSize: 11 }}>{fmt$(a.value)}</span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                   {[
                     { label: "Total Value", value: fmt$(transition.totalValue), color: "var(--ink)" },
                     { label: "LT Gains (23.8%)", value: fmt$(transition.ltGains), color: "#00f0c0" },
