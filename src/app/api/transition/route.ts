@@ -21,21 +21,7 @@ export async function POST(req: NextRequest) {
       accountId: account.accountId,
       accountNumber: account.accountNumber,
       modelName: account.modelName,
-      // Apply userMappings overrides to unassigned holdings before processing
-      processed: processWithBudget(
-        {
-          ...account,
-          unassigned: account.unassigned.map(h => {
-            if (userMappings[h.ticker]) {
-              // User has overridden this mapping — store override for processWithBudget to use
-              return { ...h, _userMappingOverride: userMappings[h.ticker] }
-            }
-            return h
-          }),
-        },
-        gainsBudget,
-        userMappings
-      ),
+      processed: processWithBudget(account, gainsBudget, userMappings),
     }))
 
     const transition = buildTransition(
