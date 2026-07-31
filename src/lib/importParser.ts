@@ -333,14 +333,35 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
 // ─── Process with gains budget ────────────────────────────────────────────────
 // Priority: 1) losses (always sell), 2) poor matches (sell up to budget, lowest gain first),
 //           3) decent matches (sell up to budget), 4) strong matches (keep as equivalent)
-export function processWithBudget(account: AccountData, gainsBudget: number | null): ProcessedHolding[] {
+export function processWithBudget(account: AccountData, gainsBudget: number | null, userMappings: Record<string, string> = {}): ProcessedHolding[] {
   const { unassigned, inModel } = account
   const processed: ProcessedHolding[] = []
 
   // Step 1: Losses — always sell
   const losses = unassigned.filter(h => h.unrealizedGL <= 0)
+  // Helper: resolve matches respecting userMappings overrides
+  const resolveMatches = (h: ImportHolding): ImportMatch[] => {
+    const override = userMappings[h.ticker]
+    if (override) {
+      // Parse "VOO / SCHG" into individual tickers
+      const tickers = override.split(/\s*\/\s*/).map(t => t.trim()).filter(Boolean)
+      const matched = tickers.map(ticker => inModel.find(m => m.ticker === ticker)).filter(Boolean) as ImportHolding[]
+      if (matched.length > 0) {
+        const totalTarget = matched.reduce((s, m) => s + m.targetValue, 0)
+        return matched.map(m => ({
+          ticker: m.ticker, name: m.name, msCategory: m.msCategory,
+          targetValue: m.targetValue, currentValue: m.currentValue,
+          underweightValue: Math.max(0, m.targetValue - m.currentValue),
+          score: 10, // user-defined = perfect score
+          weight: totalTarget > 0 ? m.targetValue / totalTarget : 1 / matched.length,
+        }))
+      }
+    }
+    return findMatches(h, inModel)
+  }
+
   losses.forEach(h => {
-    const matches = findMatches(h, inModel)
+    const matches = resolveMatches(h)
     const mapScore = getBestMapScore(h, inModel)
     processed.push({ holding: h, action: "sell-loss", matches, mapScore })
   })
@@ -348,8 +369,8 @@ export function processWithBudget(account: AccountData, gainsBudget: number | nu
   // Step 2: Score all gain positions by mapping quality
   const gains = unassigned.filter(h => h.unrealizedGL > 0).map(h => ({
     holding: h,
-    matches: findMatches(h, inModel),
-    mapScore: getBestMapScore(h, inModel),
+    matches: resolveMatches(h),
+    mapScore: userMappings[h.ticker] ? 10 : getBestMapScore(h, inModel),
   }))
 
   if (gainsBudget === null || gainsBudget <= 0) {
