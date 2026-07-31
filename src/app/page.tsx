@@ -92,237 +92,280 @@ async function exportTransitionPDF(transition: TransitionSummary, trades: TradeR
   const { jsPDF } = (window as any).jspdf
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
 
-  const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })
-  const fmtD = (n: number) => n === 0 ? "$0.00" : n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 })
-  const fmtPct = (n: number) => `${(n * 100).toFixed(1)}%`
-  const name = clientName || transition.clientName
-  const sells = trades.filter(t => t.tradeType === "sell").sort((a, b) => a.tradeAmount - b.tradeAmount).slice(0, 10)
-  const buys = trades.filter(t => t.tradeType === "buy").sort((a, b) => b.tradeAmount - a.tradeAmount).slice(0, 10)
+  const name = clientName || transition.clientName || "Client"
+  const W = 210, M = 18, RM = 192
+  let y = 0
 
-  const W = 210; const M = 15; const lineH = 6
-  let y = 20
+  // ── Colors ──
+  const BROWN   = [61, 52, 39]    as [number,number,number]  // #3d3427
+  const CREAM   = [245, 240, 232] as [number,number,number]  // #f5f0e8
+  const RED     = [192, 57, 43]   as [number,number,number]
+  const GREEN   = [26, 122, 74]   as [number,number,number]
+  const MUTED   = [120, 110, 95]  as [number,number,number]
+  const DARK    = [44, 40, 34]    as [number,number,number]
+  const BORDER  = [200, 184, 154] as [number,number,number]
+
+  const fmtD = (n: number) => n === 0 ? "$0.00" : (n < 0 ? "-" : "") + "$" + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const fmt  = (n: number) => (n < 0 ? "-" : "") + "$" + Math.abs(Math.round(n)).toLocaleString("en-US")
+  const fmtPct = (n: number) => (n * 100).toFixed(1) + "%"
+
+  const setFont = (style: "normal"|"bold"|"italic", size: number, color: [number,number,number] = DARK) => {
+    doc.setFont("times", style)
+    doc.setFontSize(size)
+    doc.setTextColor(...color)
+  }
+
+  const hline = (yy: number, lw = 0.3, col: [number,number,number] = BORDER) => {
+    doc.setDrawColor(...col)
+    doc.setLineWidth(lw)
+    doc.line(M, yy, RM, yy)
+  }
+
+  // ── Page background ──
+  const drawBg = () => {
+    doc.setFillColor(...CREAM)
+    doc.rect(0, 0, W, 297, "F")
+  }
+
+  // ── Page 1 ──
+  drawBg()
+  y = 22
 
   // Header
-  doc.setFont("helvetica", "bold")
-  doc.setFontSize(18)
-  doc.setTextColor(44, 44, 44)
+  setFont("bold", 22, BROWN)
   doc.text("Portfolio Transition Analysis", M, y)
-  doc.setFontSize(22)
-  doc.setTextColor(61, 52, 39)
-  doc.text("Savvy", W - M, y, { align: "right" })
-  y += 8
+  setFont("bold", 28, BROWN)
+  doc.text("Savvy", RM, y, { align: "right" })
+  y += 7
 
-  doc.setFont("helvetica", "normal")
-  doc.setFontSize(10)
-  doc.setTextColor(100)
+  setFont("normal", 10, MUTED)
   doc.text(`Client: ${name}`, M, y); y += 5
   doc.text(`Prepared by Savvy Advisors · ${transition.date}`, M, y); y += 5
-  doc.text(`Target Model: ${transition.modelName}`, M, y); y += 8
+  hline(y, 0.5, BROWN); y += 6
 
-  doc.setDrawColor(200, 184, 154)
-  doc.setLineWidth(0.5)
-  doc.line(M, y, W - M, y); y += 8
+  setFont("normal", 10, MUTED)
+  doc.text(`Target Model:  ${transition.modelName}`, M, y); y += 8
 
-  // Metrics
+  // Metric boxes
   const metrics = [
-    { label: "TOTAL VALUE", value: fmt(transition.totalValue), color: [44, 44, 44] as [number,number,number] },
-    { label: "TRANSITION G/L", value: fmtD(transition.totalTradeGL), color: transition.totalTradeGL < 0 ? [192, 57, 43] as [number,number,number] : [44, 44, 44] as [number,number,number] },
-    { label: "ESTIMATED TAX", value: fmtD(transition.estimatedTax), color: [192, 57, 43] as [number,number,number] },
-    { label: "TAX IMPACT", value: `${(transition.taxImpactPct * 100).toFixed(2)}%`, color: [192, 57, 43] as [number,number,number] },
+    { label: "TOTAL VALUE",    value: fmt(transition.totalValue),           color: DARK },
+    { label: "TRANSITION G/L", value: fmtD(transition.totalTradeGL),        color: transition.totalTradeGL < 0 ? RED : GREEN },
+    { label: "ESTIMATED TAX",  value: fmtD(transition.estimatedTax),        color: RED },
+    { label: "TAX IMPACT",     value: (transition.taxImpactPct*100).toFixed(2)+"%", color: RED },
   ]
-  const mW = (W - 2 * M - 9) / 4
+  const boxW = (RM - M - 9) / 4
   metrics.forEach((m, i) => {
-    const x = M + i * (mW + 3)
-    doc.setDrawColor(200)
+    const bx = M + i * (boxW + 3)
+    doc.setDrawColor(...BORDER)
     doc.setFillColor(255, 255, 255)
-    doc.rect(x, y, mW, 18, "S")
-    doc.setFont("helvetica", "normal")
-    doc.setFontSize(7)
-    doc.setTextColor(150)
-    doc.text(m.label, x + 3, y + 5)
-    doc.setFont("helvetica", "bold")
-    doc.setFontSize(12)
-    doc.setTextColor(...m.color)
-    doc.text(m.value, x + 3, y + 13)
+    doc.setLineWidth(0.3)
+    doc.rect(bx, y, boxW, 20, "FD")
+    setFont("normal", 7, MUTED)
+    doc.text(m.label, bx + 3, y + 5)
+    setFont("bold", 14, m.color)
+    doc.text(m.value, bx + 3, y + 14)
   })
   y += 26
 
-  // Asset Allocation table
-  doc.setFont("helvetica", "bold")
-  doc.setFontSize(9)
-  doc.setTextColor(150)
-  doc.text("ASSET ALLOCATION", M, y); y += 4
-  doc.setDrawColor(200, 184, 154)
-  doc.line(M, y, W - M, y); y += 5
+  // Asset allocation section
+  setFont("bold", 9, BROWN)
+  doc.text("ASSET ALLOCATION", M, y); y += 2
+  hline(y, 0.5, BROWN); y += 5
 
-  const acCols = [55, 30, 30, 35, 35]
-  const acHeaders = ["Asset Class", "Current %", "Target %", "Post-Trade %", "Trade Amount"]
-  doc.setFillColor(61, 52, 39)
-  doc.rect(M, y, W - 2 * M, 6, "F")
-  doc.setTextColor(255)
-  doc.setFontSize(7)
-  let cx = M + 2
-  acHeaders.forEach((h, i) => {
-    doc.text(h, cx, y + 4, { align: i > 0 ? "right" : "left" })
-    cx += acCols[i]
-  })
-  y += 6
+  // Table header
+  doc.setFillColor(...BROWN)
+  doc.rect(M, y, RM - M, 7, "F")
+  setFont("bold", 8, [255,255,255])
+  doc.text("Asset Class", M + 3, y + 5)
+  doc.text("Current %", M + 75, y + 5, { align: "right" })
+  doc.text("Target %",  M + 100, y + 5, { align: "right" })
+  doc.text("Post-Trade %", M + 128, y + 5, { align: "right" })
+  doc.text("Trade Amount", RM - 2, y + 5, { align: "right" })
+  y += 7
 
   transition.assetAllocation.forEach((row, ri) => {
-    if (ri % 2 === 0) { doc.setFillColor(249, 247, 244); doc.rect(M, y, W - 2 * M, 5, "F") }
-    doc.setTextColor(44, 44, 44)
-    doc.setFont("helvetica", "normal")
-    doc.setFontSize(8)
-    let cx2 = M + 2
-    const vals = [row.assetClass, fmtPct(row.currentPct), fmtPct(row.targetPct), fmtPct(row.postTradePct), (row.tradeAmount >= 0 ? "+" : "") + fmt(row.tradeAmount)]
-    vals.forEach((v, i) => {
-      if (i > 0) doc.setTextColor(row.tradeAmount < 0 && i === 4 ? 192 : i === 3 ? 26 : 44, i === 3 ? 92 : i === 4 && row.tradeAmount < 0 ? 57 : 44, i === 3 ? 138 : 44)
-      doc.text(v, cx2, y + 3.5, { align: i > 0 ? "right" : "left" })
-      doc.setTextColor(44, 44, 44)
-      cx2 += acCols[i]
-    })
-    y += 5
+    const bg = ri % 2 === 1 ? [235, 228, 215] as [number,number,number] : [255,255,255] as [number,number,number]
+    doc.setFillColor(...bg)
+    doc.rect(M, y, RM - M, 6, "F")
+    setFont("normal", 9, DARK)
+    doc.text(row.assetClass, M + 3, y + 4.2)
+    doc.text(fmtPct(row.currentPct), M + 75, y + 4.2, { align: "right" })
+    doc.text(fmtPct(row.targetPct),  M + 100, y + 4.2, { align: "right" })
+    setFont("bold", 9, row.inTolerance ? GREEN : RED)
+    doc.text(fmtPct(row.postTradePct), M + 128, y + 4.2, { align: "right" })
+    setFont("bold", 9, row.tradeAmount >= 0 ? GREEN : RED)
+    doc.text((row.tradeAmount >= 0 ? "+" : "") + fmt(row.tradeAmount), RM - 2, y + 4.2, { align: "right" })
+    y += 6
   })
-  y += 8
+  y += 6
 
-  // Tax grid
-  const taxBoxW = (W - 2 * M - 5) / 2
-  const preTax = [
-    ["Unrealized G/L", fmtD(transition.ltGains + transition.stGains + transition.losses)],
-    ["Gains", fmtD(transition.ltGains + transition.stGains)],
-    ["Losses", fmtD(transition.losses)],
-  ]
-  const postTax = [
-    ["Long Term Gains", fmtD(transition.ltGains)],
-    ["Short Term Gains", fmtD(transition.stGains)],
-    ["Net Realized G/L", fmtD(transition.totalTradeGL)],
-    ["Estimated Tax", fmtD(transition.estimatedTax)],
-    ["# of Trades", String(transition.numTrades)],
-  ]
+  // Tax assessment - two column
+  setFont("bold", 9, BROWN)
+  doc.text("TAX ASSESSMENT", M, y); y += 2
+  hline(y, 0.5, BROWN); y += 6
 
-  const drawTaxBox = (label: string, rows: string[][], bx: number) => {
-    doc.setFillColor(61, 52, 39)
-    doc.rect(bx, y, taxBoxW, 6, "F")
-    doc.setTextColor(255)
-    doc.setFont("helvetica", "bold")
-    doc.setFontSize(7)
-    doc.text(label, bx + 3, y + 4)
-    let ty = y + 8
-    rows.forEach(([k, v]) => {
-      doc.setFont("helvetica", "normal")
-      doc.setFontSize(8)
-      doc.setTextColor(44, 44, 44)
-      doc.text(k, bx + 3, ty)
-      doc.text(v, bx + taxBoxW - 3, ty, { align: "right" })
-      doc.setDrawColor(240, 236, 230)
-      doc.line(bx, ty + 1.5, bx + taxBoxW, ty + 1.5)
-      ty += 5
+  const col1x = M, col2x = M + 90
+  const colW = 84
+
+  // Box helper
+  const taxBox = (bx: number, title: string, rows: [string, string, [number,number,number]][], startY: number) => {
+    doc.setFillColor(...BROWN)
+    doc.rect(bx, startY, colW, 7, "F")
+    setFont("bold", 8, [255,255,255])
+    doc.text(title, bx + 3, startY + 5)
+    let ty = startY + 7
+    rows.forEach(([label, val, col], i) => {
+      const bg = i % 2 === 0 ? [255,255,255] as [number,number,number] : [235, 228, 215] as [number,number,number]
+      doc.setFillColor(...bg)
+      doc.rect(bx, ty, colW, 6, "F")
+      setFont(label.startsWith(" ") ? "italic" : "normal", 8.5, DARK)
+      doc.text(label.trim(), bx + 3, ty + 4.2)
+      setFont("bold", 8.5, col)
+      doc.text(val, bx + colW - 2, ty + 4.2, { align: "right" })
+      ty += 6
     })
+    return ty
   }
-  drawTaxBox("PRE-TRANSITION", preTax, M)
-  drawTaxBox("POST-TRANSITION", postTax, M + taxBoxW + 5)
-  y += 6 + postTax.length * 5 + 10
+
+  const preRows: [string, string, [number,number,number]][] = [
+    ["Unrealized G/L", fmtD(transition.ltGains + transition.stGains + transition.losses), DARK],
+    [" Gains",         fmtD(transition.ltGains + transition.stGains), GREEN],
+    [" Losses",        fmtD(transition.losses), RED],
+  ]
+  const postRows: [string, string, [number,number,number]][] = [
+    ["Realized Gains", "", DARK],
+    [" Long Term",     fmtD(transition.ltGains), transition.ltGains >= 0 ? GREEN : RED],
+    [" Short Term",    fmtD(transition.stGains), transition.stGains >= 0 ? GREEN : RED],
+    ["Net Realized G/L", fmtD(transition.totalTradeGL), transition.totalTradeGL >= 0 ? GREEN : RED],
+    ["YTD Gain (Post-Trade)", fmtD(transition.totalRealizedGL || transition.totalTradeGL), DARK],
+    ["Estimated Tax",  fmtD(transition.estimatedTax), RED],
+    ["# of Trades",    String(transition.numTrades), DARK],
+  ]
+
+  const endY1 = taxBox(col1x, "PRE-TRANSITION",  preRows,  y)
+  const endY2 = taxBox(col2x, "POST-TRANSITION", postRows, y)
+  y = Math.max(endY1, endY2) + 8
 
   // Footer
-  doc.setFontSize(7)
-  doc.setTextColor(180)
-  doc.text("This analysis is for internal advisory use only. Tax estimates are approximate and do not constitute tax advice.", M, 287)
+  hline(285, 0.3, BORDER)
+  setFont("italic", 7.5, MUTED)
+  doc.text("This analysis is for internal advisory use only. Tax estimates are approximate and do not constitute tax advice.", M, 290)
 
-  // Page 2
+  // ── Page 2 ──
   doc.addPage()
-  y = 20
+  drawBg()
+  y = 22
 
-  doc.setFont("helvetica", "bold")
-  doc.setFontSize(18)
-  doc.setTextColor(44, 44, 44)
+  setFont("bold", 22, BROWN)
   doc.text("Detailed Trade Analysis", M, y)
-  doc.setFontSize(22)
-  doc.setTextColor(61, 52, 39)
-  doc.text("Savvy", W - M, y, { align: "right" })
-  y += 8
-  doc.setFont("helvetica", "normal")
-  doc.setFontSize(10)
-  doc.setTextColor(100)
+  setFont("bold", 28, BROWN)
+  doc.text("Savvy", RM, y, { align: "right" })
+  y += 7
+  setFont("normal", 10, MUTED)
   doc.text(`Client: ${name}`, M, y); y += 5
-  doc.text(`Prepared by Savvy Advisors · ${transition.date}`, M, y); y += 10
+  doc.text(`Prepared by Savvy Advisors · ${transition.date}`, M, y); y += 5
+  hline(y, 0.5, BROWN); y += 8
 
-  // Accounts table
-  doc.setFont("helvetica", "bold")
-  doc.setFontSize(9)
-  doc.setTextColor(150)
-  doc.text("ACCOUNTS", M, y); y += 4
-  doc.line(M, y, W - M, y); y += 5
-  doc.setFillColor(61, 52, 39)
-  doc.rect(M, y, W - 2 * M, 6, "F")
-  doc.setTextColor(255)
-  doc.setFontSize(7)
-  doc.text("Account", M + 2, y + 4)
-  doc.text("Reg Type", M + 60, y + 4)
-  doc.text("Account Value", W - M - 2, y + 4, { align: "right" })
-  y += 6
-  transition.accounts.forEach((a, ri) => {
-    if (ri % 2 === 0) { doc.setFillColor(249, 247, 244); doc.rect(M, y, W - 2 * M, 5, "F") }
-    doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(44, 44, 44)
-    doc.text(a.accountNumber, M + 2, y + 3.5)
-    doc.text(a.regType || "—", M + 60, y + 3.5)
-    doc.text(fmt(a.value), W - M - 2, y + 3.5, { align: "right" })
-    y += 5
+  // Accounts
+  setFont("bold", 9, BROWN)
+  doc.text("ACCOUNTS", M, y); y += 2
+  hline(y, 0.5, BROWN); y += 5
+
+  doc.setFillColor(...BROWN)
+  doc.rect(M, y, RM - M, 7, "F")
+  setFont("bold", 8, [255,255,255])
+  doc.text("Account", M + 3, y + 5)
+  doc.text("Reg Type", M + 60, y + 5)
+  doc.text("Account Value", RM - 2, y + 5, { align: "right" })
+  y += 7
+
+  transition.accounts.forEach((a, i) => {
+    const bg = i % 2 === 0 ? [255,255,255] as [number,number,number] : [235,228,215] as [number,number,number]
+    doc.setFillColor(...bg)
+    doc.rect(M, y, RM - M, 6, "F")
+    setFont("normal", 9, DARK)
+    doc.text(a.accountNumber, M + 3, y + 4.2)
+    doc.text(a.regType || "—", M + 60, y + 4.2)
+    setFont("bold", 9, DARK)
+    doc.text(fmt(a.value), RM - 2, y + 4.2, { align: "right" })
+    y += 6
   })
   y += 8
 
-  // Top 10 Buys
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(150)
-  doc.text("TOP 10 BUYS", M, y); y += 4
-  doc.line(M, y, W - M, y); y += 5
-  doc.setFillColor(61, 52, 39); doc.rect(M, y, W - 2 * M, 6, "F")
-  doc.setTextColor(255); doc.setFontSize(7)
-  doc.text("Account", M + 2, y + 4); doc.text("Ticker", M + 32, y + 4)
-  doc.text("Security Name", M + 55, y + 4); doc.text("Trade $", W - M - 2, y + 4, { align: "right" })
-  y += 6
-  buys.forEach((t, ri) => {
-    if (ri % 2 === 0) { doc.setFillColor(249, 247, 244); doc.rect(M, y, W - 2 * M, 5, "F") }
-    doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(44, 44, 44)
-    doc.text(t.accountNumber, M + 2, y + 3.5)
-    doc.text(t.ticker, M + 32, y + 3.5)
-    const sn = t.securityName.length > 35 ? t.securityName.slice(0, 33) + "…" : t.securityName
-    doc.text(sn, M + 55, y + 3.5)
-    doc.setTextColor(26, 122, 74)
-    doc.text("+" + fmt(t.tradeAmount), W - M - 2, y + 3.5, { align: "right" })
-    y += 5
+  // Top buys
+  const buys = trades.filter(t => t.tradeType === "buy").sort((a, b) => b.tradeAmount - a.tradeAmount).slice(0, 10)
+  setFont("bold", 9, BROWN)
+  doc.text("TOP 10 BUYS", M, y); y += 2
+  hline(y, 0.5, BROWN); y += 5
+
+  doc.setFillColor(...BROWN)
+  doc.rect(M, y, RM - M, 7, "F")
+  setFont("bold", 8, [255,255,255])
+  doc.text("Account", M + 3, y + 5)
+  doc.text("Ticker", M + 32, y + 5)
+  doc.text("Security Name", M + 55, y + 5)
+  doc.text("Trade $", RM - 2, y + 5, { align: "right" })
+  y += 7
+
+  buys.forEach((t, i) => {
+    const bg = i % 2 === 0 ? [255,255,255] as [number,number,number] : [235,228,215] as [number,number,number]
+    doc.setFillColor(...bg)
+    doc.rect(M, y, RM - M, 6, "F")
+    setFont("normal", 9, DARK)
+    doc.text(t.accountNumber || "—", M + 3, y + 4.2)
+    setFont("bold", 9, DARK)
+    doc.text(t.ticker, M + 32, y + 4.2)
+    setFont("normal", 8.5, DARK)
+    const sn = t.securityName.length > 38 ? t.securityName.slice(0, 36) + "…" : t.securityName
+    doc.text(sn, M + 55, y + 4.2)
+    setFont("bold", 9, GREEN)
+    doc.text("+" + fmt(t.tradeAmount), RM - 2, y + 4.2, { align: "right" })
+    y += 6
   })
   y += 8
 
-  // Top 10 Sells
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(150)
-  doc.text("TOP 10 SELLS", M, y); y += 4
-  doc.line(M, y, W - M, y); y += 5
-  doc.setFillColor(61, 52, 39); doc.rect(M, y, W - 2 * M, 6, "F")
-  doc.setTextColor(255); doc.setFontSize(7)
-  doc.text("Account", M + 2, y + 4); doc.text("Ticker", M + 32, y + 4)
-  doc.text("Security Name", M + 55, y + 4)
-  doc.text("Trade $", W - M - 32, y + 4, { align: "right" })
-  doc.text("G/L $", W - M - 2, y + 4, { align: "right" })
-  y += 6
-  sells.forEach((t, ri) => {
-    if (ri % 2 === 0) { doc.setFillColor(249, 247, 244); doc.rect(M, y, W - 2 * M, 5, "F") }
-    doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(44, 44, 44)
-    doc.text(t.accountNumber, M + 2, y + 3.5)
-    doc.text(t.ticker, M + 32, y + 3.5)
-    const sn = t.securityName.length > 30 ? t.securityName.slice(0, 28) + "…" : t.securityName
-    doc.text(sn, M + 55, y + 3.5)
-    doc.setTextColor(192, 57, 43)
-    doc.text(fmt(t.tradeAmount), W - M - 32, y + 3.5, { align: "right" })
-    doc.setTextColor(t.realizedGL < 0 ? 192 : t.realizedGL > 0 ? 26 : 100, t.realizedGL < 0 ? 57 : t.realizedGL > 0 ? 122 : 100, t.realizedGL < 0 ? 43 : t.realizedGL > 0 ? 74 : 100)
-    doc.text(t.realizedGL !== 0 ? fmtD(t.realizedGL) : "$0.00", W - M - 2, y + 3.5, { align: "right" })
-    y += 5
+  // Top sells
+  const sells = trades.filter(t => t.tradeType === "sell").sort((a, b) => a.tradeAmount - b.tradeAmount).slice(0, 10)
+  setFont("bold", 9, BROWN)
+  doc.text("TOP 10 SELLS", M, y); y += 2
+  hline(y, 0.5, BROWN); y += 5
+
+  doc.setFillColor(...BROWN)
+  doc.rect(M, y, RM - M, 7, "F")
+  setFont("bold", 8, [255,255,255])
+  doc.text("Account", M + 3, y + 5)
+  doc.text("Ticker", M + 32, y + 5)
+  doc.text("Security Name", M + 55, y + 5)
+  doc.text("Trade $", RM - 42, y + 5, { align: "right" })
+  doc.text("G/L $", RM - 2, y + 5, { align: "right" })
+  y += 7
+
+  sells.forEach((t, i) => {
+    const bg = i % 2 === 0 ? [255,255,255] as [number,number,number] : [235,228,215] as [number,number,number]
+    doc.setFillColor(...bg)
+    doc.rect(M, y, RM - M, 6, "F")
+    setFont("normal", 9, DARK)
+    doc.text(t.accountNumber || "—", M + 3, y + 4.2)
+    setFont("bold", 9, DARK)
+    doc.text(t.ticker, M + 32, y + 4.2)
+    setFont("normal", 8.5, DARK)
+    const sn = t.securityName.length > 34 ? t.securityName.slice(0, 32) + "…" : t.securityName
+    doc.text(sn, M + 55, y + 4.2)
+    setFont("bold", 9, RED)
+    doc.text(fmt(t.tradeAmount), RM - 42, y + 4.2, { align: "right" })
+    setFont("bold", 9, t.realizedGL < 0 ? RED : t.realizedGL > 0 ? GREEN : MUTED)
+    doc.text(t.realizedGL !== 0 ? fmtD(t.realizedGL) : "$0.00", RM - 2, y + 4.2, { align: "right" })
+    y += 6
   })
 
-  doc.setFontSize(7); doc.setTextColor(180)
-  doc.text("This analysis is for internal advisory use only. Tax estimates are approximate and do not constitute tax advice.", M, 287)
+  hline(285, 0.3, BORDER)
+  setFont("italic", 7.5, MUTED)
+  doc.text("This analysis is for internal advisory use only. Tax estimates are approximate and do not constitute tax advice.", M, 290)
 
-  const filename = `Transition-${(name || "Client").replace(/\s+/g, "-")}-${new Date().toISOString().slice(0,10)}.pdf`
+  const filename = `Transition-${name.replace(/\s+/g, "-")}-${new Date().toISOString().slice(0,10)}.pdf`
   doc.save(filename)
 }
+
 
 // ─── Main component ────────────────────────────────────────────────────────────
 export default function Home() {
