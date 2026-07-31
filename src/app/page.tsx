@@ -1040,8 +1040,8 @@ export default function Home() {
               {transition && showMappingsPanel && (() => {
                 // Collect all unassigned holdings from transition trades (equiv rows)
                 const equivTrades = editedTrades.filter(t => t.isEquivalent)
-                // Also check for unassigned sells that have a mappedTicker
-                const sellsWithMap = editedTrades.filter(t => t.isSell && !t.isKeep && t.mappedTicker)
+                // Only show gain/map positions (not losses) to keep view clean
+                const sellsWithMap = editedTrades.filter(t => t.isSell && !t.isKeep && t.mappedTicker && t.unrealizedGL > 0)
                 // Build list of all mappable positions
                 const allUnassigned = new Map<string, { ticker: string; name: string; currentValue: number; mappedTo: string }>()
                 equivTrades.forEach(t => {
@@ -1114,40 +1114,6 @@ export default function Home() {
                     <span style={{ textAlign: "right" }}>Tgt %</span>
                     <span style={{ textAlign: "right" }}>Post %</span>
                   </div>
-
-                  {/* Cash row — live from editedTrades */}
-                  {(() => {
-                    const currentCash = transition.currentCash || 0
-                    const cashTarget = (transition.assetGroups || []).find(g => g.assetClass === "Cash")?.targetValue || 0
-                    // Live net cash from edited trades
-                    const liveSells = editedTrades.filter(t => t.tradeType === "sell").reduce((s, t) => s + Math.abs(t.editTradeAmount ?? t.tradeAmount), 0)
-                    const liveBuys = editedTrades.filter(t => t.tradeType === "buy").reduce((s, t) => s + Math.abs(t.editTradeAmount ?? t.tradeAmount), 0)
-                    const netCash = liveSells - liveBuys
-                    const postCash = Math.max(0, currentCash + netCash)
-                    const cashPct = transition.totalValue > 0 ? currentCash / transition.totalValue : 0
-                    const cashTgtPct = transition.totalValue > 0 ? cashTarget / transition.totalValue : 0
-                    const postCashPct = transition.totalValue > 0 ? postCash / transition.totalValue : 0
-                    const inTol = postCash >= 0 && (cashTgtPct > 0 ? Math.abs(postCashPct - cashTgtPct) <= cashTgtPct * 0.25 : true)
-                    if (currentCash <= 0 && netCash === 0) return null
-                    return (
-                      <div style={{ background: "var(--surface-raised)", border: `1px solid ${inTol ? "var(--border)" : "#ff448844"}`, borderRadius: 10, overflow: "hidden" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 80px 90px 90px 90px 60px 60px 60px", padding: "12px 14px", gap: 8, alignItems: "center" }}>
-                          <span style={{ fontSize: 14, color: inTol ? "#00f0c0" : "#ff4488" }}>{inTol ? "✓" : "✗"}</span>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>Cash</span>
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: netCash >= 0 ? "#00f0c0" : "#ff4488" }}>
-                            {netCash !== 0 ? `${netCash > 0 ? "+" : ""}${fmt$(netCash)}` : "—"}
-                          </span>
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-muted)" }}>{fmt$(currentCash)}</span>
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-muted)" }}>{cashTarget > 0 ? fmt$(cashTarget) : "—"}</span>
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: inTol ? "#00f0c0" : "#ff4488" }}>{fmt$(postCash)}</span>
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>{(cashPct * 100).toFixed(1)}%</span>
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>{cashTarget > 0 ? (cashTgtPct * 100).toFixed(1) + "%" : "—"}</span>
-                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: inTol ? "#00f0c0" : "#ff4488" }}>{(postCashPct * 100).toFixed(1)}%</span>
-                        </div>
-                      </div>
-                    )
-                  })()}
 
                   {(transition.assetGroups || []).filter(g => g.assetClass !== "Cash").map(group => {
                     const isExpanded = expandedAssetClasses.has(group.assetClass)
@@ -1261,17 +1227,43 @@ export default function Home() {
                                       <div style={{ fontSize: 10, color: "var(--ink-faint)", marginTop: 2 }}>{holding.securityName.length > 36 ? holding.securityName.slice(0,34) + "…" : holding.securityName}</div>
                                     </div>
                                     <div style={{ textAlign: "right" }}>
-                                      {editTrade ? (
-                                        <input
-                                          value={effectiveTradeAmt.toFixed(0)}
-                                          onChange={e => {
-                                            const val = parseFloat(e.target.value) || 0
-                                            const newType = val < 0 ? "sell" : "buy"
+                                      <input
+                                        type="text"
+                                        defaultValue={effectiveTradeAmt !== 0 ? effectiveTradeAmt.toFixed(0) : ""}
+                                        placeholder="0"
+                                        key={editTrade?.id || holding.ticker}
+                                        onBlur={e => {
+                                          const raw = e.target.value.trim()
+                                          if (raw === "" || raw === "-") { e.target.value = ""; return }
+                                          const val = parseFloat(raw.replace(/[^0-9.-]/g, "")) || 0
+                                          if (editTrade) {
                                             updateTrade(editTrade.id, "editTradeAmount", val)
-                                            if (newType !== editTrade.tradeType) updateTrade(editTrade.id, "tradeType", newType)
-                                          }}
-                                          style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: effectiveTradeAmt < 0 ? "#ff4488" : "#00f0c0", background: "transparent", border: "none", borderBottom: "1px dashed rgba(255,255,255,0.15)", outline: "none", width: 85, textAlign: "right" }} />
-                                      ) : <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>}
+                                          } else if (val !== 0) {
+                                            setEditedTrades(prev => [...prev, {
+                                              id: `manual-${holding.ticker}-${group.assetClass}`,
+                                              accountId: "", accountNumber: "",
+                                              ticker: holding.ticker, securityName: holding.securityName,
+                                              tradeType: val < 0 ? "sell" as const : "buy" as const,
+                                              tradeAmount: val, editTradeAmount: val,
+                                              currentValue: holding.currentValue, targetValue: holding.targetValue,
+                                              unrealizedGL: holding.unrealizedGL,
+                                              unrealizedGLST: (holding as any).unrealizedGLST || 0,
+                                              unrealizedGLLT: (holding as any).unrealizedGLLT || 0,
+                                              isLongTerm: true, realizedGL: 0, realizedGLST: 0, realizedGLLT: 0, estimatedTax: 0,
+                                              msCategory: "", productClass: "", assetClass: group.assetClass,
+                                              mappedTicker: holding.ticker, mappedName: holding.securityName,
+                                              isSell: val < 0, isKeep: true, isEquivalent: false, mapScore: 10, userOverride: true,
+                                            }])
+                                          }
+                                          // Format display
+                                          if (val !== 0) e.target.value = val.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })
+                                        }}
+                                        onFocus={e => {
+                                          // Show raw number on focus
+                                          const raw = e.target.value.replace(/[^0-9.-]/g, "")
+                                          e.target.value = raw
+                                        }}
+                                        style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color: effectiveTradeAmt < 0 ? "#ff4488" : effectiveTradeAmt > 0 ? "#00f0c0" : "var(--ink-faint)", background: "transparent", border: "none", borderBottom: `1px dashed ${editTrade ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.08)"}`, outline: "none", width: 90, textAlign: "right" }} />
                                     </div>
                                     <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: effectiveGL < 0 ? "#ff4488" : effectiveGL > 0 ? "#00f0c0" : "var(--ink-faint)" }}>{effectiveGL !== 0 ? fmt$(effectiveGL) : "—"}</span>
                                     <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{fmt$(holding.effectiveCurrent)}</span>
@@ -1350,7 +1342,41 @@ export default function Home() {
                         )}                      </div>
                     )
                   })}
-                </div>
+
+
+                  {/* Cash row — live from editedTrades */}
+                  {(() => {
+                    const currentCash = transition.currentCash || 0
+                    const cashTarget = (transition.assetGroups || []).find(g => g.assetClass === "Cash")?.targetValue || 0
+                    // Live net cash from edited trades
+                    const liveSells = editedTrades.filter(t => t.tradeType === "sell").reduce((s, t) => s + Math.abs(t.editTradeAmount ?? t.tradeAmount), 0)
+                    const liveBuys = editedTrades.filter(t => t.tradeType === "buy").reduce((s, t) => s + Math.abs(t.editTradeAmount ?? t.tradeAmount), 0)
+                    const netCash = liveSells - liveBuys
+                    const postCash = Math.max(0, currentCash + netCash)
+                    const cashPct = transition.totalValue > 0 ? currentCash / transition.totalValue : 0
+                    const cashTgtPct = transition.totalValue > 0 ? cashTarget / transition.totalValue : 0
+                    const postCashPct = transition.totalValue > 0 ? postCash / transition.totalValue : 0
+                    const inTol = postCash >= 0 && (cashTgtPct > 0 ? Math.abs(postCashPct - cashTgtPct) <= cashTgtPct * 0.25 : true)
+                    if (currentCash <= 0 && netCash === 0) return null
+                    return (
+                      <div style={{ background: "var(--surface-raised)", border: `1px solid ${inTol ? "var(--border)" : "#ff448844"}`, borderRadius: 10, overflow: "hidden" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "24px 1fr 90px 80px 90px 90px 90px 60px 60px 60px", padding: "12px 14px", gap: 8, alignItems: "center" }}>
+                          <span style={{ fontSize: 14, color: inTol ? "#00f0c0" : "#ff4488" }}>{inTol ? "✓" : "✗"}</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>Cash</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: netCash >= 0 ? "#00f0c0" : "#ff4488" }}>
+                            {netCash !== 0 ? `${netCash > 0 ? "+" : ""}${fmt$(netCash)}` : "—"}
+                          </span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-faint)" }}>—</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-muted)" }}>{fmt$(currentCash)}</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-muted)" }}>{cashTarget > 0 ? fmt$(cashTarget) : "—"}</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700, color: inTol ? "#00f0c0" : "#ff4488" }}>{fmt$(postCash)}</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>{(cashPct * 100).toFixed(1)}%</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-faint)" }}>{cashTarget > 0 ? (cashTgtPct * 100).toFixed(1) + "%" : "—"}</span>
+                          <span style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: inTol ? "#00f0c0" : "#ff4488" }}>{(postCashPct * 100).toFixed(1)}%</span>
+                        </div>
+                      </div>
+                    )
+                  })()}                </div>
               )}
             </div>
           </div>
