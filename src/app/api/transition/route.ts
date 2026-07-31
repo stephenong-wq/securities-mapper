@@ -7,8 +7,10 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData()
     const file = formData.get("file") as File
     const gainsBudgetStr = formData.get("gainsBudget") as string | null
-    const clientName = formData.get("clientName") as string || "Client"
+    const clientName = (formData.get("clientName") as string | null) || ""
+    const userMappingsStr = formData.get("userMappings") as string | null
     const gainsBudget = gainsBudgetStr && parseFloat(gainsBudgetStr) > 0 ? parseFloat(gainsBudgetStr) : null
+    const userMappings: Record<string, string> = userMappingsStr ? JSON.parse(userMappingsStr) : {}
 
     if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 })
 
@@ -19,7 +21,21 @@ export async function POST(req: NextRequest) {
       accountId: account.accountId,
       accountNumber: account.accountNumber,
       modelName: account.modelName,
-      processed: processWithBudget(account, gainsBudget),
+      // Apply userMappings overrides to unassigned holdings before processing
+      processed: processWithBudget(
+        {
+          ...account,
+          unassigned: account.unassigned.map(h => {
+            if (userMappings[h.ticker]) {
+              // User has overridden this mapping — store override for processWithBudget to use
+              return { ...h, _userMappingOverride: userMappings[h.ticker] }
+            }
+            return h
+          }),
+        },
+        gainsBudget,
+        userMappings
+      ),
     }))
 
     const transition = buildTransition(
@@ -29,7 +45,7 @@ export async function POST(req: NextRequest) {
       clientName
     )
 
-    return NextResponse.json({ transition, processedAccounts, importResult })
+    return NextResponse.json({ importResult, processedAccounts, transition })
   } catch (err) {
     console.error("Transition error:", err)
     return NextResponse.json({ error: String(err) }, { status: 500 })
