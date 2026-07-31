@@ -35,11 +35,16 @@ export interface AccountData {
   accountId: string
   accountNumber: string
   regType: string
+  isRetirement: boolean   // true = IRA/401k/Roth/etc — no tax cost on sells
   modelName: string
   inModel: ImportHolding[]
   unassigned: ImportHolding[]
   cashValue: number
   cashTarget: number
+}
+
+function classifyRetirement(regType: string): boolean {
+  return /ira|401k|roth|403b|sep|simple|pension|retirement/i.test(regType)
 }
 
 export interface ImportResult {
@@ -316,9 +321,11 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
   const accounts: AccountData[] = Array.from(accountMap.entries()).map(([accountNumber, data]) => {
     const acctValue = [...data.inModel, ...data.unassigned].reduce((s, h) => s + h.currentValue, 0) + (data.cashValue || 0)
     const cashTargetShare = totalAccountValue > 0 ? (acctValue / totalAccountValue) * cashTargetFromSheet : 0
+    const regType = regTypeMap.get(accountNumber) || ""
     return {
       accountId: accountNumber, accountNumber,
-      regType: regTypeMap.get(accountNumber) || "",
+      regType,
+      isRetirement: classifyRetirement(regType),
       modelName: extractModelName(data.modelCategories),
       inModel: data.inModel,
       unassigned: data.unassigned,
@@ -333,26 +340,27 @@ export function parseImportExcel(buffer: ArrayBuffer): ImportResult {
 // ─── Process with gains budget ────────────────────────────────────────────────
 // Priority: 1) losses (always sell), 2) poor matches (sell up to budget, lowest gain first),
 //           3) decent matches (sell up to budget), 4) strong matches (keep as equivalent)
-export function processWithBudget(account: AccountData, gainsBudget: number | null, userMappings: Record<string, string> = {}): ProcessedHolding[] {
+export function processWithBudget(
+  account: AccountData,
+  gainsBudget: number | null,
+  userMappings: Record<string, string> = {}
+): ProcessedHolding[] {
   const { unassigned, inModel } = account
   const processed: ProcessedHolding[] = []
 
-  // Step 1: Losses — always sell
-  const losses = unassigned.filter(h => h.unrealizedGL <= 0)
   // Helper: resolve matches respecting userMappings overrides
   const resolveMatches = (h: ImportHolding): ImportMatch[] => {
     const override = userMappings[h.ticker]
     if (override) {
-      // Parse "VOO / SCHG" into individual tickers
-      const tickers = override.split(/\s*\/\s*/).map(t => t.trim()).filter(Boolean)
-      const matched = tickers.map(ticker => inModel.find(m => m.ticker === ticker)).filter(Boolean) as ImportHolding[]
+      const tickers = override.split(/\s*\/\s*/).map((t: string) => t.trim()).filter(Boolean)
+      const matched = tickers.map((ticker: string) => inModel.find(m => m.ticker === ticker)).filter(Boolean) as ImportHolding[]
       if (matched.length > 0) {
-        const totalTarget = matched.reduce((s, m) => s + m.targetValue, 0)
-        return matched.map(m => ({
+        const totalTarget = matched.reduce((s: number, m: ImportHolding) => s + m.targetValue, 0)
+        return matched.map((m: ImportHolding) => ({
           ticker: m.ticker, name: m.name, msCategory: m.msCategory,
           targetValue: m.targetValue, currentValue: m.currentValue,
           underweightValue: Math.max(0, m.targetValue - m.currentValue),
-          score: 10, // user-defined = perfect score
+          score: 10,
           weight: totalTarget > 0 ? m.targetValue / totalTarget : 1 / matched.length,
         }))
       }
@@ -360,52 +368,88 @@ export function processWithBudget(account: AccountData, gainsBudget: number | nu
     return findMatches(h, inModel)
   }
 
+  // Losses always sell (free — no budget impact for taxable, irrelevant for retirement)
+  const losses = unassigned.filter(h => h.unrealizedGL <= 0)
   losses.forEach(h => {
-    const matches = resolveMatches(h)
-    const mapScore = getBestMapScore(h, inModel)
-    processed.push({ holding: h, action: "sell-loss", matches, mapScore })
+    processed.push({ holding: h, action: "sell-loss", matches: resolveMatches(h), mapScore: getBestMapScore(h, inModel) })
   })
 
-  // Step 2: Score all gain positions by mapping quality
   const gains = unassigned.filter(h => h.unrealizedGL > 0).map(h => ({
     holding: h,
     matches: resolveMatches(h),
     mapScore: userMappings[h.ticker] ? 10 : getBestMapScore(h, inModel),
   }))
 
-  if (gainsBudget === null || gainsBudget <= 0) {
-    // No budget — all gains get mapped as equivalents (no selling)
+  if (account.isRetirement) {
+    // Retirement account: no tax cost — sell everything freely, no budget needed
+    gains.forEach(({ holding, matches, mapScore }) => {
+      processed.push({ holding, action: "sell-gain", matches, gainConsumed: 0, mapScore })
+    })
+  } else if (!gainsBudget || gainsBudget <= 0) {
+    // Taxable with no budget: map all gains as equivalents
     gains.forEach(({ holding, matches, mapScore }) => {
       processed.push({ holding, action: "map", matches, mapScore })
     })
   } else {
-    // Budget available — sell gains prioritizing worst matches first, then by lowest gain
-    // Effective budget = declared budget + losses harvested (losses offset gains)
-    const totalLosses = losses.reduce((sum, h) => sum + Math.abs(h.unrealizedGL), 0)
-    const effectiveBudget = gainsBudget + totalLosses
-    let budgetUsed = 0
-
-    // Sort: worst match first (lowest score), then lowest gain within same score tier
+    // Taxable with budget: sell worst-matched first, lowest gain within tier
+    // NOTE: actual budget tracking happens cross-account in the route/engine
+    // Here we mark all as sell-gain; engine will respect the combined budget
     const sorted = [...gains].sort((a, b) => {
-      const scoreDiff = a.mapScore - b.mapScore  // lowest score = sell first
-      if (Math.abs(scoreDiff) > 1) return scoreDiff
-      return a.holding.unrealizedGL - b.holding.unrealizedGL  // lowest gain first within tier
+      const sd = a.mapScore - b.mapScore
+      if (Math.abs(sd) > 1) return sd
+      return a.holding.unrealizedGL - b.holding.unrealizedGL
     })
-
     sorted.forEach(({ holding, matches, mapScore }) => {
-      if (budgetUsed + holding.unrealizedGL <= effectiveBudget) {
-        // Within budget — sell
-        budgetUsed += holding.unrealizedGL
-        processed.push({ holding, action: "sell-gain", matches, gainConsumed: holding.unrealizedGL, mapScore })
-      } else {
-        // Over budget — keep as equivalent (mapped)
-        processed.push({ holding, action: "map", matches, mapScore })
-      }
+      processed.push({ holding, action: "sell-gain", matches, gainConsumed: holding.unrealizedGL, mapScore })
     })
   }
 
   return processed
 }
+
+// ─── Multi-account budget enforcement ────────────────────────────────────────
+// After per-account processing, enforce the combined gains budget across all
+// taxable accounts. IRA gains are free. Taxable gains consume the budget.
+export function enforceCombinedBudget(
+  processedAccounts: { account: AccountData; processed: ProcessedHolding[] }[],
+  gainsBudget: number | null
+): void {
+  if (!gainsBudget && gainsBudget !== 0) return  // null = unlimited
+
+  // Step 1: count losses from taxable accounts (offset budget)
+  const taxableLosses = processedAccounts
+    .filter(pa => !pa.account.isRetirement)
+    .flatMap(pa => pa.processed.filter(p => p.action === "sell-loss"))
+    .reduce((s, p) => s + Math.abs(p.holding.unrealizedGL), 0)
+
+  const effectiveBudget = gainsBudget + taxableLosses
+  let budgetUsed = 0
+
+  // Step 2: collect all taxable sell-gain candidates across all accounts
+  // Sort: worst match first (lowest mapScore), then lowest gain
+  const candidates: { pa: { account: AccountData; processed: ProcessedHolding[] }; p: ProcessedHolding; idx: number }[] = []
+  processedAccounts.filter(pa => !pa.account.isRetirement).forEach(pa => {
+    pa.processed.forEach((p, idx) => {
+      if (p.action === "sell-gain") candidates.push({ pa, p, idx })
+    })
+  })
+  candidates.sort((a, b) => {
+    const sd = a.p.mapScore - b.p.mapScore
+    if (Math.abs(sd) > 1) return sd
+    return a.p.holding.unrealizedGL - b.p.holding.unrealizedGL
+  })
+
+  // Step 3: allow sells up to budget, convert rest to "map"
+  candidates.forEach(({ pa, p, idx }) => {
+    if (budgetUsed + p.holding.unrealizedGL <= effectiveBudget) {
+      budgetUsed += p.holding.unrealizedGL
+      pa.processed[idx] = { ...p, gainConsumed: p.holding.unrealizedGL }
+    } else {
+      pa.processed[idx] = { ...p, action: "map", gainConsumed: 0 }
+    }
+  })
+}
+
 
 // ─── Export CSV ───────────────────────────────────────────────────────────────
 export function exportImportCSV(processedAccounts: { accountId: string; processed: ProcessedHolding[] }[], editedMappings: Record<string, string>): string {
