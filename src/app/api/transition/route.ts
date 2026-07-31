@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { parseImportExcel, processWithBudget } from "@/lib/importParser"
+import { parseImportExcel, processWithBudget, enforceCombinedBudget } from "@/lib/importParser"
 import { buildTransition } from "@/lib/transitionEngine"
 
 export async function POST(req: NextRequest) {
@@ -17,11 +17,24 @@ export async function POST(req: NextRequest) {
     const buffer = await file.arrayBuffer()
     const importResult = parseImportExcel(buffer)
 
-    const processedAccounts = importResult.accounts.map(account => ({
+    // Step 1: per-account processing (retirement accounts sell freely)
+    const processedPairs = importResult.accounts.map(account => ({
+      account,
       accountId: account.accountId,
       accountNumber: account.accountNumber,
       modelName: account.modelName,
       processed: processWithBudget(account, gainsBudget, userMappings),
+    }))
+
+    // Step 2: enforce combined gains budget across all taxable accounts
+    enforceCombinedBudget(processedPairs, gainsBudget)
+
+    // Step 3: build transition with asset location
+    const processedAccounts = processedPairs.map(pa => ({
+      accountId: pa.accountId,
+      accountNumber: pa.accountNumber,
+      modelName: pa.modelName,
+      processed: pa.processed,
     }))
 
     const transition = buildTransition(
